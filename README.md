@@ -15,10 +15,6 @@
 
 - 📄 Know about my experiences [https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link](https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link)
 
-<h3 align="left">Connect with me:</h3>
-<p align="left">
-</p>
-
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph.svg">
@@ -72,12 +68,6 @@
 ###
 
 <div align="left">
-</div>
-
-###
-
-<div align="center">
-  <img src="https://spotify-recently-played-readme.vercel.app/api?count=5" alt="Spotify recently played"  />
 </div>
 
 ###
