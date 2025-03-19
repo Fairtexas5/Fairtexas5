@@ -1,10 +1,4 @@
-̨<link href="https://fonts.googleapis.com/css?family=Russo+One" rel="stylesheet">
-<link rel="stylesheet" href="./src/style.css" />
-<svg viewBox="0 0 1320 300">
-	<text x="50%" y="50%" dy=".35em" text-anchor="middle">
-		webstoryboy
-	</text>
-</svg>
+![Animated Text](src/anim.svg)
 
 <h1 align="center">Hi 👋, I'm Aditya</h1>
 <h3 align="center">A passionate Data Scientist and ML/AI Engineer.</h3>
