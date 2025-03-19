@@ -1,0 +1,17 @@
+<svg width="500" height="100" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @keyframes typing {
+      from { width: 0; }
+    }
+    text {
+      font-family: "Arial";
+      font-size: 40px;
+      font-weight: bold;
+      fill: #ff6600;
+      white-space: nowrap;
+      overflow: hidden;
+      animation: typing 3s steps(10) infinite alternate;
+    }
+  </style>
+  <text x="10" y="50">Hi, I'm Aditya!</text>
+</svg>
