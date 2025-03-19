@@ -1,12 +1,10 @@
-̨<style>
-@font-face {
-    font-family: 'Pixel';
-    src: url('../src/Pixel.woff2') format('woff2');
-}
-h1, h3 {
-    font-family: 'Pixel', sans-serif;
-}
-</style>
+̨<link href="https://fonts.googleapis.com/css?family=Russo+One" rel="stylesheet">
+
+<svg viewBox="0 0 1320 300">
+	<text x="50%" y="50%" dy=".35em" text-anchor="middle">
+		webstoryboy
+	</text>
+</svg>
 
 <h1 align="center">Hi 👋, I'm Aditya</h1>
 <h3 align="center">A passionate Data Scientist and ML/AI Engineer.</h3>
