@@ -25,33 +25,23 @@
 
 <h3>Things I code with</h3>
 <p>
-  <img alt="python" src="https://img.shields.io/badge/-Python-%233776AB?style=flat-square&logo=python&logoColor=%23FFFFFF&logoSize=auto
-" />
- <img alt="Numpy" src="" />
-  <img alt="Numpy" src="" />
-  <img alt="Numpy" src="" />
-  <img alt="Numpy" src="" />
-  <img alt="Numpy" src="" />
-  <img alt="Numpy" src="" />
-  <img alt="Numpy" src="" />
-  <img alt="Numpy" src="" />
+  <img alt="python" src="https://img.shields.io/badge/Python-%233776AB?style=for-the-badge&logo=python&labelColor=white" /> &nbsp;
+  <img alt="Numpy" src="https://img.shields.io/badge/NumPy-%23013243?style=for-the-badge&logo=numpy&logoColor=%23013243&labelColor=white" />&nbsp;
+  <img alt="Pandas" src="https://img.shields.io/badge/Pandas-%23150458?style=for-the-badge&logo=pandas&logoColor=%23150458&labelColor=white" />&nbsp;
+  <img alt="PLotly" src="https://img.shields.io/badge/Plotly-%233F4F75?style=for-the-badge&logo=plotly&logoColor=%233F4F75&labelColor=white" />&nbsp;
+  <img alt="Tensorflow" src="https://img.shields.io/badge/-Tensorflow-%23FF6F00?style=flat-square&logo=tensorflow&logoColor=white&logoSize=auto" /> &nbsp;
+  <img alt="Pytorch" src="https://img.shields.io/badge/-Pytorch-%23EE4C2C?style=flat-square&logo=pytorch&logoColor=white&logoSize=auto" /> &nbsp;
   
-  <img alt="Numpy" src="https://img.shields.io/badge/-NumPy-%23013243?style=flat-square&logo=numpy&logoColor=white&logoSize=auto" />
-  <img alt="Pandas" src="https://img.shields.io/badge/-Pandas-%23150458?style=flat-square&logo=pandas&logoColor=white&logoSize=auto" />
-<img alt="PLotly" src="https://img.shields.io/badge/-Plotly-%233F4F75?style=flat-square&logo=plotly&logoColor=white&logoSize=auto" />
-  <img alt="Tensorflow" src="https://img.shields.io/badge/-Tensorflow-%23FF6F00?style=flat-square&logo=tensorflow&logoColor=white&logoSize=auto" />
-  <img alt="Pytorch" src="https://img.shields.io/badge/-Pytorch-%23EE4C2C?style=flat-square&logo=pytorch&logoColor=white&logoSize=auto" />
+  <img alt="OpenCV" src="https://img.shields.io/badge/-OpenCV-%235C3EE8?style=flat-square&logo=opencv&logoColor=white&logoSize=auto" /> &nbsp;
+  <img alt="Flask" src="https://img.shields.io/badge/-Flask-%23000000?style=flat-square&logo=flask&logoColor=white&logoSize=auto" /> &nbsp;
+ <img alt="Jupyter" src="https://img.shields.io/badge/-Jupyter-%23F37626?style=flat-square&logo=jupyter&logoColor=white&logoSize=auto" /> &nbsp;
+  <img alt="Docker" src="https://img.shields.io/badge/-Docker-46a2f1?style=flat-square&logo=docker&logoColor=white" />&nbsp;
+  <img alt="github actions" src="https://img.shields.io/badge/-Github_Actions-2088FF?style=flat-square&logo=github-actions&logoColor=white" />&nbsp;
+  <img alt="Google Cloud Platform" src="https://img.shields.io/badge/-Google_Cloud_Platform-1a73e8?style=flat-square&logo=google-cloud&logoColor=white" />&nbsp;
   
-  <img alt="OpenCV" src="https://img.shields.io/badge/-OpenCV-%235C3EE8?style=flat-square&logo=opencv&logoColor=white&logoSize=auto" />
-  <img alt="Flask" src="https://img.shields.io/badge/-Flask-%23000000?style=flat-square&logo=flask&logoColor=white&logoSize=auto" />
- <img alt="Jupyter" src="https://img.shields.io/badge/-Jupyter-%23F37626?style=flat-square&logo=jupyter&logoColor=white&logoSize=auto" /> 
-  <img alt="Docker" src="https://img.shields.io/badge/-Docker-46a2f1?style=flat-square&logo=docker&logoColor=white" />
-  <img alt="github actions" src="https://img.shields.io/badge/-Github_Actions-2088FF?style=flat-square&logo=github-actions&logoColor=white" />
-  <img alt="Google Cloud Platform" src="https://img.shields.io/badge/-Google_Cloud_Platform-1a73e8?style=flat-square&logo=google-cloud&logoColor=white" />
+  <img alt="git" src="https://img.shields.io/badge/-Git-F05032?style=flat-square&logo=git&logoColor=white" />&nbsp;
   
-  <img alt="git" src="https://img.shields.io/badge/-Git-F05032?style=flat-square&logo=git&logoColor=white" />
-  
-  <img alt="html5" src="https://img.shields.io/badge/-HTML5-E34F26?style=flat-square&logo=html5&logoColor=white" />
+  <img alt="html5" src="https://img.shields.io/badge/-HTML5-E34F26?style=flat-square&logo=html5&logoColor=white" />&nbsp;
 </p>
 
 
