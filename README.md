@@ -1,5 +1,3 @@
-![Animated Text](src/anim.svg)
-
 <h1 align="center">Hi 👋, I'm Aditya</h1>
 <h3 align="center">A passionate Data Scientist and ML/AI Engineer.</h3>
 
