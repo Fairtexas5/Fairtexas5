@@ -1,5 +1,5 @@
 ̨<link href="https://fonts.googleapis.com/css?family=Russo+One" rel="stylesheet">
-
+<link rel="stylesheet" href="./src/style.css" />
 <svg viewBox="0 0 1320 300">
 	<text x="50%" y="50%" dy=".35em" text-anchor="middle">
 		webstoryboy
