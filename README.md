@@ -1,19 +1,9 @@
-<h1 align="center">Hi 👋, I'm Aditya</h1>
+̨<h1 align="center">Hi 👋, I'm Aditya</h1>
 <h3 align="center">A passionate Data Scientist and ML/AI Engineer.</h3>
 
-- 🔭 I’m currently working on **LLM and LangChain**
+<img alt="gif" src="src/coding.gif" /> &nbsp;
 
-- 🌱 I’m currently learning **NLP and LLM Techniques**
-
-- 👯 I’m looking to collaborate on **FineTuning of LLM**
-
-- 👨‍💻 All of my projects are available at [https://aditsg.netlify.app/](https://aditsg.netlify.app/)
-
-- 💬 Ask me about **Python, AI Techniques**
-
-- 📫 How to reach me **aditsg26@gmail.com**
-
-- 📄 Know about my experiences [https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link](https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link)
+- 📄 Know about my experiences [Resume](https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph-dark.svg">
