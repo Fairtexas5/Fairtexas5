@@ -1,4 +1,14 @@
-̨<h1 align="center">Hi 👋, I'm Aditya</h1>
+̨<style>
+@font-face {
+    font-family: 'Pixel';
+    src: url('../src/Pixel.woff2') format('woff2');
+}
+h1, h3 {
+    font-family: 'Pixel', sans-serif;
+}
+</style>
+
+<h1 align="center">Hi 👋, I'm Aditya</h1>
 <h3 align="center">A passionate Data Scientist and ML/AI Engineer.</h3>
 
 <img alt="gif" src="src/coding.gif" /> &nbsp;
