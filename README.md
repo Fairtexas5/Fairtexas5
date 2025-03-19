@@ -36,23 +36,15 @@
   <img alt="Numpy" src="" />
   <img alt="Numpy" src="" />
   
-  <img alt="Numpy" src="https://img.shields.io/badge/-NumPy-%23013243?style=flat-square&logo=numpy&logoColor=white&logoSize=auto
-" />
-  <img alt="Pandas" src="https://img.shields.io/badge/-Pandas-%23150458?style=flat-square&logo=pandas&logoColor=white&logoSize=auto
-" />
-<img alt="PLotly" src="https://img.shields.io/badge/-Plotly-%233F4F75?style=flat-square&logo=plotly&logoColor=white&logoSize=auto
-" />
-  <img alt="Tensorflow" src="https://img.shields.io/badge/-Tensorflow-%23FF6F00?style=flat-square&logo=tensorflow&logoColor=white&logoSize=auto
-" />
-  <img alt="Pytorch" src="https://img.shields.io/badge/-Pytorch-%23EE4C2C?style=flat-square&logo=pytorch&logoColor=white&logoSize=auto
-" />
+  <img alt="Numpy" src="https://img.shields.io/badge/-NumPy-%23013243?style=flat-square&logo=numpy&logoColor=white&logoSize=auto" />
+  <img alt="Pandas" src="https://img.shields.io/badge/-Pandas-%23150458?style=flat-square&logo=pandas&logoColor=white&logoSize=auto" />
+<img alt="PLotly" src="https://img.shields.io/badge/-Plotly-%233F4F75?style=flat-square&logo=plotly&logoColor=white&logoSize=auto" />
+  <img alt="Tensorflow" src="https://img.shields.io/badge/-Tensorflow-%23FF6F00?style=flat-square&logo=tensorflow&logoColor=white&logoSize=auto" />
+  <img alt="Pytorch" src="https://img.shields.io/badge/-Pytorch-%23EE4C2C?style=flat-square&logo=pytorch&logoColor=white&logoSize=auto" />
   
-  <img alt="OpenCV" src="https://img.shields.io/badge/-OpenCV-%235C3EE8?style=flat-square&logo=opencv&logoColor=white&logoSize=auto
-" />
-  <img alt="Flask" src="https://img.shields.io/badge/-Flask-%23000000?style=flat-square&logo=flask&logoColor=white&logoSize=auto
-" />
- <img alt="Jupyter" src="https://img.shields.io/badge/-Jupyter-%23F37626?style=flat-square&logo=jupyter&logoColor=white&logoSize=auto
-" /> 
+  <img alt="OpenCV" src="https://img.shields.io/badge/-OpenCV-%235C3EE8?style=flat-square&logo=opencv&logoColor=white&logoSize=auto" />
+  <img alt="Flask" src="https://img.shields.io/badge/-Flask-%23000000?style=flat-square&logo=flask&logoColor=white&logoSize=auto" />
+ <img alt="Jupyter" src="https://img.shields.io/badge/-Jupyter-%23F37626?style=flat-square&logo=jupyter&logoColor=white&logoSize=auto" /> 
   <img alt="Docker" src="https://img.shields.io/badge/-Docker-46a2f1?style=flat-square&logo=docker&logoColor=white" />
   <img alt="github actions" src="https://img.shields.io/badge/-Github_Actions-2088FF?style=flat-square&logo=github-actions&logoColor=white" />
   <img alt="Google Cloud Platform" src="https://img.shields.io/badge/-Google_Cloud_Platform-1a73e8?style=flat-square&logo=google-cloud&logoColor=white" />
