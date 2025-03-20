@@ -18,13 +18,6 @@ What I Do:
   - 😁 Let's connect on [Linkedin](https://www.linkedin.com/in/aditsg26/)
   - 💼 Check out my [Portfolio](https://aditsg.netlify.app/)
 
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph.svg">
-  <img alt="pacman contribution graph" src="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph.svg">
-</picture>
-
 ###
 
 <h3>Things I code with</h3>
@@ -61,5 +54,10 @@ What I Do:
   <img src="https://github-readme-activity-graph.vercel.app/graph?username=fairtexas5&radius=16&theme=nightowl&area=true&order=5&hide_border=true" height="300" alt="activity-graph graph"  />
 </div>
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph.svg">
+  <img alt="pacman contribution graph" src="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph.svg">
+</picture>
 ###
 
