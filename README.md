@@ -1,9 +1,11 @@
-<h1 align="center">Hi 👋, I'm Aditya</h1>
-<h3 align="center">A passionate Data Scientist and ML/AI Engineer.</h3>
+![Glitch Text](https://github.com/Fairtexas5/Fairtexas5.github.io/blob/main/assets/svg/name.svg)
+<h3 align="center">Data Scientist and ML/AI Engineer.</h3>
+- 📄 Know about my experiences [Resume](https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link)
+
 
 <img alt="gif" src="src/coding.gif" /> &nbsp;
 
-- 📄 Know about my experiences [Resume](https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link)
+
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fairtexas5/fairtexas5/output/pacman-contribution-graph-dark.svg">
