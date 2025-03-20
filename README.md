@@ -1,10 +1,32 @@
 ![Glitch Text](https://github.com/Fairtexas5/Fairtexas5.github.io/blob/main/assets/svg/name.svg)
-<h3 align="center">Data Scientist and ML/AI Engineer.</h3>
+### 🚀 Aditya Singh – AI Enthusiast | ML Researcher | Data Scientist
 - 📄 Know about my experiences [Resume](https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link)
 
 
-<img alt="gif" src="src/coding.gif" /> &nbsp;
+<div style="display: flex; align-items: center; justify-content: space-between; border: 2px solid #ddd; padding: 10px; border-radius: 10px; flex-wrap: nowrap; max-width: 800px; margin: auto;">
 
+  <div style="flex: 1; padding-right: 20px;">
+    <p>
+      Welcome to my GitHub! I'm <b>Aditya Singh</b>, an AI/ML researcher passionate about pushing the boundaries of deep learning, NLP, and computer vision. My work revolves around transforming complex data into meaningful insights, building intelligent systems, and crafting efficient AI-driven solutions.
+    </p>
+  </div>
+
+  <div style="flex: 1; display: flex; justify-content: center;">
+    <img src="src/coding.gif" alt="gif" width="250">
+  </div>
+
+</div>
+
+```
+What I Do:
+{
+  "AI & Deep Learning": "Exploring the frontiers of neural networks, LLMs, and generative AI",
+  "Computer Vision & Image Processing": "Dehazing, detection, and everything in between.",
+  "Conversational AI & NLP": "Training and fine-tuning chatbots that truly understand."
+  "MLOps & Deployment" : "Bridging the gap between research and real-world AI applications"
+}
+```
+💡 I thrive on tackling challenging problems and bringing AI innovations to life. If you're into AI, machine learning, or just love discussing futuristic tech, let's connect!
 
 
 <picture>
