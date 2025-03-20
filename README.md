@@ -16,7 +16,7 @@ What I Do:
 💡 I thrive on tackling challenging problems and bringing AI innovations to life!
   - 📄 Check out my [Resume](https://drive.google.com/file/d/1n5QSoS5yzdGfx5v8IqQCrHnzzCaEwOkU/view?usp=drive_link).
   - 😁 Let's connect on [Linkedin](https://www.linkedin.com/in/aditsg26/)
-  - 💼 Check out my [Portfolio](https://aditsg.netlify.app/)
+  - 💼 Have a look at my [Portfolio](https://aditsg.netlify.app/)
 
 ###
 
