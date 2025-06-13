@@ -1,0 +1,174 @@
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# Load the dataset (uncomment and adjust path as needed)
+# df = pd.read_csv('Book1.csv')
+
+# For this example, assuming 'df' is already loaded
+
+# Step 1: Ensure correct data types
+binary_cols = ['SAVINGS_BANK', 'FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN',
+               'ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER',
+               'ATM', 'MBS', 'YONO', 'UPI', 'INB']
+for col in binary_cols:
+    df[col] = df[col].astype(int)
+
+# Step 2: TDV data quality check
+# Check for duplicate rows (same CUST_NBR, ACCT_NBR, TDV)
+duplicates = df[df.duplicated(subset=['CUST_NBR', 'ACCT_NBR', 'TDV'], keep=False)]
+if not duplicates.empty:
+    print(f"Warning: {len(duplicates)} duplicate rows found for CUST_NBR, ACCT_NBR, TDV:")
+    print(duplicates[['CUST_NBR', 'ACCT_NBR', 'TDV']].head())
+
+# Check unique TDV values per ACCT_NBR
+tdv_per_account = df.groupby('ACCT_NBR')['TDV'].nunique()
+multiple_tdv_accounts = tdv_per_account[tdv_per_account > 1]
+if not multiple_tdv_accounts.empty:
+    print(f"Warning: {len(multiple_tdv_accounts)} accounts have multiple TDV values:")
+    print(multiple_tdv_accounts.head())
+
+# Check unique TDV values per CUST_NBR (pre-aggregation)
+tdv_per_customer = df.groupby('CUST_NBR')['TDV'].nunique()
+multiple_tdv_customers = tdv_per_customer[tdv_per_customer > 1]
+print(f"Customers with multiple TD\' values: {len(multiple_tdv_customers)}")
+if not multiple_tdv_customers.empty:
+    print("Sample customers with multiple TDV values:")
+    print(df[df['CUST_NBR'].isin(multiple_tdv_customers.index)][['CUST_NBR', 'ACCT_NBR', 'TDV']].head())
+
+# Step 3: Create ordinal features before aggregation
+# Tier (0: None, 1: SILVER, 2: GOLD, 3: DIAMOND, 4: PLATINUM, 5: ROHDIUM)
+tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
+tier_map = {'None': 0, 'SILVER': 1, 'GOLD': 2, 'DIAMOND': 3, 'PLATINUM': 4, 'ROHDIUM': 5}
+df['tier'] = df[tier_cols].idxmax(axis=1)
+df['tier'] = df['tier'].where(df[tier_cols].sum(axis=1) > 0, 'None')
+df['tier'] = df['tier'].map(tier_map)
+
+# Check for tier exclusivity violations
+tier_violations = df[df[tier_cols].sum(axis=1) > 1][['CUST_NBR'] + tier_cols]
+if not tier_violations.empty:
+    print(f"Warning: {len(tier_violations)} customers have multiple tier flags:")
+    print(tier_violations.head())
+
+# CUST_CAT ordinal (assumed order)
+cust_cat_map = {'GENERAL PUBLIC': 0, 'SALARY PACKAGE': 1, 'NRI': 2}
+df['cust_cat_ordinal'] = df['CUST_CAT'].map(cust_cat_map)
+if df['cust_cat_ordinal'].isnull().any():
+    print("Warning: Unknown CUST_CAT values found. Consider updating cust_cat_map.")
+    print(df[df['cust_cat_ordinal'].isnull()]['CUST_CAT'].unique())
+
+# CUST_CLASS ordinal (assumed order)
+cust_class_map = {'SILVER': 0, 'GOLD': 1, 'DIAMOND': 2, 'PLATINUM': 3}
+df['cust_class_ordinal'] = df['CUST_CLASS'].map(cust_class_map)
+if df['cust_class_ordinal'].isnull().any():
+    print("Warning: Unknown CUST_CLASS values found. Consider updating cust_class_map.")
+    print(df[df['cust_class_ordinal'].isnull()]['CUST_CLASS'].unique())
+
+# Step 4: Aggregate customer-level features
+agg_dict = {
+    'END_OF_DAY_BAL': 'sum',
+    'AVG_BAL_YTD': 'mean',  # Updated to mean
+    'AQB': 'mean',          # Updated to mean
+    'TDV': 'sum',
+    'HOME_LOAN_AMT': 'sum',
+    'TOTAL_PRODUCT': 'max',
+    'TOTAL_PRODUCT_EXCL_SERVICES': 'mean',  # Updated to mean
+    'SAVINGS_BANK': 'max',
+    'FD': 'max',
+    'HOME_LOAN': 'max',
+    'PERSONAL_LOAN': 'max',
+    'GOLD_LOAN': 'max',
+    'ATM': 'max',
+    'MBS': 'max',
+    'YONO': 'max',
+    'UPI': 'max',
+    'INB': 'max',
+    'tier': 'max',  # Max ensures highest tier
+    'cust_cat_ordinal': 'max',  # Assuming consistency
+    'cust_class_ordinal': 'max'  # Assuming consistency
+}
+customer_df = df.groupby('CUST_NBR').agg(agg_dict).reset_index()
+
+# Step 5: Aggregate savings bank-specific features
+savings_df = df[df['SAVINGS_BANK'] == 1].groupby('CUST_NBR').agg({
+    'END_OF_DAY_BAL': 'sum',
+    'AVG_BAL_YTD': 'sum',
+    'AQB': 'sum',
+    'TDV': 'sum',
+    'DR_NO': 'sum',
+    'CR_AMT': 'sum'
+}).reset_index()
+savings_df.columns = ['CUST_NBR', 'savings_balance', 'savings_avg_bal_ytd', 'savings_aqb',
+                      'savings_tdv', 'savings_dr_no', 'savings_cr_amt']
+customer_df = customer_df.merge(savings_df, on='CUST_NBR', how='left')
+
+# Step 6: Handle missing values for savings columns
+savings_cols = ['savings_balance', 'savings_avg_bal_ytd', 'savings_aqb',
+                'savings_tdv', 'savings_dr_no', 'savings_cr_amt']
+customer_df[savings_cols] = customer_df[savings_cols].fillna(0)
+
+# Step 7: Numerical features visualizations
+numerical_cols = ['END_OF_DAY_BAL', 'AVG_BAL_YTD', 'AQB', 'TDV', 'HOME_LOAN_AMT',
+                 'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES',
+                 'savings_balance', 'savings_avg_bal_ytd', 'savings_aqb',
+                 'savings_tdv', 'savings_dr_no', 'savings_cr_amt']
+
+fig = make_subplots(rows=len(numerical_cols), cols=2,
+                    subplot_titles=[f"{col} Histogram" for col in numerical_cols] +
+                                   [f"{col} Box Plot" for col in numerical_cols],
+                    column_titles=["Histograms", "Box Plots"],
+                    row_heights=[0.1] * len(numerical_cols),
+                    specs=[[{'type': 'histogram'}, {'type': 'box'}]] * len(numerical_cols))
+
+for i, col in enumerate(numerical_cols, 1):
+    # Histogram
+    fig.add_trace(
+        go.Histogram(x=customer_df[col], nbinsx=50, name=col, showlegend=False),
+        row=i, col=1
+    )
+    # Box plot
+    fig.add_trace(
+        go.Box(y=customer_df[col], name=col, showlegend=False),
+        row=i, col=2
+    )
+
+fig.update_layout(height=300 * len(numerical_cols), width=1000,
+                  title_text="Distributions and Outliers of Numerical Features",
+                  showlegend=False)
+fig.show()
+
+# Step 8: Binary features visualizations
+binary_cols = ['SAVINGS_BANK', 'FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN',
+               'ATM', 'MBS', 'YONO', 'UPI', 'INB']
+binary_counts = customer_df[binary_cols].mean() * 100
+fig_binary = px.bar(x=binary_counts.index, y=binary_counts.values,
+                    labels={'x': 'Feature', 'y': 'Percentage of Customers (%)'},
+                    title='Percentage of Customers with Each Product/Digital Channel')
+fig_binary.update_layout(xaxis_tickangle=45)
+fig_binary.show()
+
+# Step 9: Ordinal features visualizations
+# Tier
+tier_counts = customer_df['tier'].value_counts(normalize=True).sort_index() * 100
+fig_tier = px.bar(x=tier_counts.index, y=tier_counts.values,
+                  labels={'x': 'Tier (0: None, 1: SILVER, 2: GOLD, 3: DIAMOND, 4: PLATINUM, 5: ROHDIUM)',
+                          'y': 'Percentage of Customers (%)'},
+                  title='Distribution of Customer Tiers')
+fig_tier.show()
+
+# CUST_CAT ordinal
+cust_cat_counts = customer_df['cust_cat_ordinal'].value_counts(normalize=True).sort_index() * 100
+fig_cat = px.bar(x=cust_cat_counts.index, y=cust_cat_counts.values,
+                 labels={'x': 'CUST_CAT (0: GENERAL PUBLIC, 1: SALARY PACKAGE, 2: NRI)',
+                         'y': 'Percentage of Customers (%)'},
+                 title='Distribution of Customer Categories (Ordinal)')
+fig_cat.show()
+
+# CUST_CLASS ordinal
+cust_class_counts = customer_df['cust_class_ordinal'].value_counts(normalize=True).sort_index() * 100
+fig_class = px.bar(x=cust_class_counts.index, y=cust_class_counts.values,
+                   labels={'x': 'CUST_CLASS (0: SILVER, 1: GOLD, 2: DIAMOND, 3: PLATINUM)',
+                           'y': 'Percentage of Customers (%)'},
+                   title='Distribution of Customer Classes (Ordinal)')
+fig_class.show()
