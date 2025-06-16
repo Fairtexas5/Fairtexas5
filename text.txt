@@ -1,7 +1,5 @@
-
-
 import pandas as pd
-from datetime import datetime
+import numpy as np
 
 # Load data
 df = pd.read_csv('Book1.csv')
@@ -10,107 +8,102 @@ df = pd.read_csv('Book1.csv')
 df['ACCT_OPN_DT'] = pd.to_datetime(df['ACCT_OPN_DT'], format='%d/%m/%y', errors='coerce')
 df['REPORT_DT'] = pd.to_datetime(df['REPORT_DT'], format='%d/%m/%y', errors='coerce')
 
-# Feature Engineering
+# Tenure calculation and imputation
 df['tenure_days'] = (df['REPORT_DT'] - df['ACCT_OPN_DT']).dt.days
+median_tenure = df['tenure_days'].median()
+df['tenure_days'] = df['tenure_days'].fillna(median_tenure)
 
-product_flags = ['FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN']
-channel_flags = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
-
-df['product_diversity'] = df[product_flags].sum(axis=1)
-df['digital_engagement'] = df[channel_flags].sum(axis=1)
-df['avg_txn_size'] = df['TDV'] / df['DR_NO'].replace(0, 1)  # Avoid division by zero
-df['balance_consistency'] = df['END_OF_DAY_BAL'] / df['AVG_BAL_YTD'].replace(0, 1)
-
-# Map tier to ordinal ranking
+# Tier mapping
 tier_order = ['SILVER', 'GOLD', 'DIAMOND', 'PLATINUM', 'ROHDIUM']
-tier_rank = {k: v for v, k in enumerate(tier_order, 1)}  # 1=lowest, 5=highest
-df['tier_class'] = df['tier'].map(tier_rank)
+tier_rank = {k: v for v, k in enumerate(tier_order, 1)}
+df['tier_class'] = df['CUST_CLASS'].map(tier_rank)
 
-# Select features for clustering
-features = [
-    'END_OF_DAY_BAL', 'AVG_BAL_YTD', 'TDV', 'AQB', 'HOME_LOAN_AMT',
-    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'SAVINGS_BANK',
-    'FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN',
-    'ATM', 'MBS', 'YONO', 'UPI', 'INB',
-    'tenure_days', 'product_diversity', 'digital_engagement',
-    'avg_txn_size', 'balance_consistency',
-    'CUST_CAT', 'CUST_CLASS', 'DR_NO', 'DR_AMT', 'CR_NO', 'CR_AMT', 'ACCT_OPN_DT', 'tier_class'
-]
+# Encode categorical features
+df['CUST_CAT'] = df['CUST_CAT'].astype('category').cat.codes
+df['CUST_CLASS'] = df['CUST_CLASS'].astype('category').cat.codes
 
-# Prepare final DataFrame
-cluster_df = df[features].copy()
-
-# Optional: Encode CUST_CAT and CUST_CLASS as categorical codes for clustering
-cluster_df['CUST_CAT'] = cluster_df['CUST_CAT'].astype('category').cat.codes
-cluster_df['CUST_CLASS'] = cluster_df['CUST_CLASS'].astype('category').cat.codes
-
-# Print sample
-print(cluster_df.head())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-
-# Load and preprocess data (your existing code)
-df = pd.read_csv('Book1.csv')
-df['ACCT_OPN_DT'] = pd.to_datetime(df['ACCT_OPN_DT'], format='%d/%m/%y', errors='coerce')
-df['REPORT_DT'] = pd.to_datetime(df['REPORT_DT'], format='%d/%m/%y', errors='coerce')
-df['tenure_days'] = (df['REPORT_DT'] - df['ACCT_OPN_DT']).dt.days
+# Feature engineering
 product_flags = ['FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN']
 channel_flags = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
 df['product_diversity'] = df[product_flags].sum(axis=1)
 df['digital_engagement'] = df[channel_flags].sum(axis=1)
 df['avg_txn_size'] = df['TDV'] / df['DR_NO'].replace(0, 1)
 df['balance_consistency'] = df['END_OF_DAY_BAL'] / df['AVG_BAL_YTD'].replace(0, 1)
-tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
-tier_priority = {'ROHDIUM': 5, 'PLATINUM': 4, 'DIAMOND': 3, 'GOLD': 2, 'SILVER': 1}
-df = df.apply(lambda row: assign_highest_tier(row), axis=1)
 
-# Select features
+
+
+# Select features for clustering
 features = [
-    'END_OF_DAY_BAL', 'AVG_BAL_YTD', 'TDV', 'AQB', 'HOME_LOAN_AMT',
-    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'SAVINGS_BANK',
-    'FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN',
-    'ATM', 'MBS', 'YONO', 'UPI', 'INB',
-    'tenure_days', 'product_diversity', 'digital_engagement',
-    'avg_txn_size', 'balance_consistency',
-    'CUST_CAT', 'CUST_CLASS', 'DR_NO', 'DR_AMT', 'CR_NO', 'CR_AMT', 'tier'
+    'TDV', 'END_OF_DAY_BAL', 'AVG_BAL_YTD', 'AQB', 'HOME_LOAN_AMT', 'DR_AMT', 'CR_AMT',
+    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'SAVINGS_BANK', 'FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN',
+    'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'tenure_days', 'product_diversity', 'digital_engagement',
+    'avg_txn_size', 'balance_consistency', 'CUST_CAT', 'CUST_CLASS'
 ]
+
 cluster_df = df[features].copy()
 
-# Encode categorical variables
-cluster_df['CUST_CAT'] = cluster_df['CUST_CAT'].astype('category').cat.codes
-cluster_df['CUST_CLASS'] = cluster_df['CUST_CLASS'].astype('category').cat.codes
-cluster_df['tier'] = df[tier_cols].idxmax(axis=1).map(tier_priority)
-
-# Apply log transformation to TDV and other monetary features
+# Winsorize and log-transform monetary features
 monetary_features = ['TDV', 'END_OF_DAY_BAL', 'AVG_BAL_YTD', 'AQB', 'HOME_LOAN_AMT', 'DR_AMT', 'CR_AMT']
 for feature in monetary_features:
-    cluster_df[feature] = np.log1p(cluster_df[feature].clip(lower=0))  # Clip to handle negatives if any
+    upper = cluster_df[feature].quantile(0.99)
+    lower = cluster_df[feature].quantile(0.01)
+    cluster_df[feature] = cluster_df[feature].clip(lower, upper)
+    cluster_df[feature] = np.log1p(cluster_df[feature].clip(lower=0))
 
-# Standardize numerical features
-scaler = StandardScaler()
-numerical_features = [f for f in features if f not in ['CUST_CAT', 'CUST_CLASS', 'tier']]
-cluster_df[numerical_features] = scaler.fit_transform(cluster_df[numerical_features])
 
-# Now proceed with clustering (e.g., K-means)
+
+from sklearn.preprocessing import RobustScaler
+
+scaler = RobustScaler()
+cluster_df[features] = scaler.fit_transform(cluster_df[features])
+
+
 from sklearn.cluster import KMeans
-kmeans = KMeans(n_clusters=5, random_state=42)
-clusters = kmeans.fit_predict(cluster_df)
-df['cluster'] = clusters
+import matplotlib.pyplot as plt
 
-# Analyze high-value clusters based on original TDV, balances, etc.
-print(df.groupby('cluster')[['TDV', 'END_OF_DAY_BAL', 'TOTAL_PRODUCT']].mean())
+# Elbow method to find optimal k
+inertia = []
+K = range(2, 11)
+for k in K:
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    kmeans.fit(cluster_df)
+    inertia.append(kmeans.inertia_)
+
+plt.plot(K, inertia, 'bx-')
+plt.xlabel('k')
+plt.ylabel('Inertia')
+plt.title('Elbow Method for Optimal k')
+plt.show()
+
+# Choose k (e.g., 4 or 5 based on elbow)
+kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
+df['kmeans_cluster'] = kmeans.fit_predict(cluster_df)
+
+# Analyze clusters
+print(df.groupby('kmeans_cluster')[['TDV', 'END_OF_DAY_BAL', 'TOTAL_PRODUCT']].mean())
+
+
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+
+# Find a good eps value using k-distance graph
+neigh = NearestNeighbors(n_neighbors=5)
+nbrs = neigh.fit(cluster_df)
+distances, indices = nbrs.kneighbors(cluster_df)
+distances = np.sort(distances[:, 4])  # 4th NN distance
+
+plt.plot(distances)
+plt.xlabel('Points')
+plt.ylabel('5-NN Distance')
+plt.title('k-distance Graph for DBSCAN')
+plt.show()
+
+# Pick eps (e.g., where the curve has a sharp bend)
+dbscan = DBSCAN(eps=1.5, min_samples=10)  # Adjust eps based on the plot
+df['dbscan_cluster'] = dbscan.fit_predict(cluster_df)
+
+# Analyze DBSCAN clusters
+print(df['dbscan_cluster'].value_counts())
+print(df.groupby('dbscan_cluster')[['TDV', 'END_OF_DAY_BAL', 'TOTAL_PRODUCT']].mean())
+
+
