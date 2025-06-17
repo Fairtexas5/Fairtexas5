@@ -1,109 +1,17 @@
-import pandas as pd
-import numpy as np
-
-# Load data
-df = pd.read_csv('Book1.csv')
-
-# Convert dates
-df['ACCT_OPN_DT'] = pd.to_datetime(df['ACCT_OPN_DT'], format='%d/%m/%y', errors='coerce')
-df['REPORT_DT'] = pd.to_datetime(df['REPORT_DT'], format='%d/%m/%y', errors='coerce')
-
-# Tenure calculation and imputation
-df['tenure_days'] = (df['REPORT_DT'] - df['ACCT_OPN_DT']).dt.days
-median_tenure = df['tenure_days'].median()
-df['tenure_days'] = df['tenure_days'].fillna(median_tenure)
-
-# Tier mapping
-tier_order = ['SILVER', 'GOLD', 'DIAMOND', 'PLATINUM', 'ROHDIUM']
-tier_rank = {k: v for v, k in enumerate(tier_order, 1)}
-df['tier_class'] = df['CUST_CLASS'].map(tier_rank)
-
-# Encode categorical features
-df['CUST_CAT'] = df['CUST_CAT'].astype('category').cat.codes
-df['CUST_CLASS'] = df['CUST_CLASS'].astype('category').cat.codes
-
-# Feature engineering
-product_flags = ['FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN']
-channel_flags = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
-df['product_diversity'] = df[product_flags].sum(axis=1)
-df['digital_engagement'] = df[channel_flags].sum(axis=1)
-df['avg_txn_size'] = df['TDV'] / df['DR_NO'].replace(0, 1)
-df['balance_consistency'] = df['END_OF_DAY_BAL'] / df['AVG_BAL_YTD'].replace(0, 1)
-
-
-
-# Select features for clustering
-features = [
-    'TDV', 'END_OF_DAY_BAL', 'AVG_BAL_YTD', 'AQB', 'HOME_LOAN_AMT', 'DR_AMT', 'CR_AMT',
-    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'SAVINGS_BANK', 'FD', 'HOME_LOAN', 'PERSONAL_LOAN', 'GOLD_LOAN',
-    'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'tenure_days', 'product_diversity', 'digital_engagement',
-    'avg_txn_size', 'balance_consistency', 'CUST_CAT', 'CUST_CLASS'
-]
-
-cluster_df = df[features].copy()
-
-# Winsorize and log-transform monetary features
-monetary_features = ['TDV', 'END_OF_DAY_BAL', 'AVG_BAL_YTD', 'AQB', 'HOME_LOAN_AMT', 'DR_AMT', 'CR_AMT']
-for feature in monetary_features:
-    upper = cluster_df[feature].quantile(0.99)
-    lower = cluster_df[feature].quantile(0.01)
-    cluster_df[feature] = cluster_df[feature].clip(lower, upper)
-    cluster_df[feature] = np.log1p(cluster_df[feature].clip(lower=0))
-
-
-
-from sklearn.preprocessing import RobustScaler
-
-scaler = RobustScaler()
-cluster_df[features] = scaler.fit_transform(cluster_df[features])
-
-
-from sklearn.cluster import KMeans
-import matplotlib.pyplot as plt
-
-# Elbow method to find optimal k
-inertia = []
-K = range(2, 11)
-for k in K:
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    kmeans.fit(cluster_df)
-    inertia.append(kmeans.inertia_)
-
-plt.plot(K, inertia, 'bx-')
-plt.xlabel('k')
-plt.ylabel('Inertia')
-plt.title('Elbow Method for Optimal k')
-plt.show()
-
-# Choose k (e.g., 4 or 5 based on elbow)
-kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
-df['kmeans_cluster'] = kmeans.fit_predict(cluster_df)
-
-# Analyze clusters
-print(df.groupby('kmeans_cluster')[['TDV', 'END_OF_DAY_BAL', 'TOTAL_PRODUCT']].mean())
-
-
-from sklearn.cluster import DBSCAN
-from sklearn.neighbors import NearestNeighbors
-
-# Find a good eps value using k-distance graph
-neigh = NearestNeighbors(n_neighbors=5)
-nbrs = neigh.fit(cluster_df)
-distances, indices = nbrs.kneighbors(cluster_df)
-distances = np.sort(distances[:, 4])  # 4th NN distance
-
-plt.plot(distances)
-plt.xlabel('Points')
-plt.ylabel('5-NN Distance')
-plt.title('k-distance Graph for DBSCAN')
-plt.show()
-
-# Pick eps (e.g., where the curve has a sharp bend)
-dbscan = DBSCAN(eps=1.5, min_samples=10)  # Adjust eps based on the plot
-df['dbscan_cluster'] = dbscan.fit_predict(cluster_df)
-
-# Analyze DBSCAN clusters
-print(df['dbscan_cluster'].value_counts())
-print(df.groupby('dbscan_cluster')[['TDV', 'END_OF_DAY_BAL', 'TOTAL_PRODUCT']].mean())
-
-
+Feature Name	Type	Description
+END_OF_DAY_BAL	Numeric	End of day balance
+AVG_BAL_YTD	Numeric	Avg balance year-to-date
+TDV	Numeric	Total debit value
+AQB	Numeric	Average quarterly balance
+HOME_LOAN_AMT	Numeric	Home loan outstanding
+TOTAL_PRODUCT	Numeric	Number of products
+TOTAL_PRODUCT_EXCL_SERVICES	Numeric	Products excl. services
+SAVINGS_BANK	Flag	Savings account flag
+FD, HOME_LOAN, ...	Flags	Product flags
+ATM, MBS, YONO, ...	Flags	Channel usage
+tenure_days	Numeric	Customer tenure in days
+product_diversity	Numeric	Number of products held
+digital_engagement	Numeric	Digital channel usage count
+avg_txn_size	Numeric	Avg debit txn size
+balance_consistency	Numeric	Balance stability
+tier, CUST_CAT, CUST_CLASS	Categorical	Customer segmentation
