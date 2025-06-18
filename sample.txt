@@ -1,0 +1,29 @@
+
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+# Load the dataset
+input_file = "Book1_small.csv"
+df = pd.read_csv(input_file)
+
+# Define the target sample size and calculate sampling fraction
+total_rows = 2382151  # Total number of rows in the original dataset
+target_sample_size = 500000  # Desired sample size
+sampling_fraction = target_sample_size / total_rows
+
+# Perform stratified sampling using CUST_CLASS as the stratification variable
+# We use train_test_split to sample the data, keeping only the 'train' portion
+df_sampled, _ = train_test_split(
+    df,
+    train_size=sampling_fraction,
+    stratify=df['CUST_CLASS'],
+    random_state=42  # For reproducibility
+)
+
+# Save the sampled dataset to a new CSV file
+output_file = "Book1_sampled.csv"
+df_sampled.to_csv(output_file, index=False)
+
+print(f"Sampled dataset saved to {output_file} with {len(df_sampled)} rows.")
+
