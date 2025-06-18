@@ -10,8 +10,13 @@ df['REPORT_DT'] = pd.to_datetime(df['REPORT_DT'], format='%d/%m/%y', errors='coe
 df['LST_CUST_CR_DT'] = pd.to_datetime(df['LST_CUST_CR_DT'], format='%d/%m/%y', errors='coerce')
 df['LST_CUST_DR_DT'] = pd.to_datetime(df['LST_CUST_DR_DT'], format='%d/%m/%y', errors='coerce')
 
-# Filter for 'SA' accounts
-df_sa = df[df['PF_FAC_REPT'] == 'SA'].copy()
+# Filter for 'SB' accounts (assuming 'SA' was a typo, as sample shows 'SB')
+df_sa = df[df['PF_FAC_REPT'] == 'SB'].copy()
+
+# Check if df_sa is empty
+if df_sa.empty:
+    print("No 'SB' accounts found in the dataset. Please verify the 'PF_FAC_REPT' column values.")
+    exit()
 
 # Handle tier columns
 tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
@@ -22,8 +27,8 @@ df_sa['tier_score'] = df_sa[tier_cols].dot([tier_priority[col] for col in tier_c
 
 # Define aggregation dictionary
 agg_dict = {
-    'CUST_CLASS': lambda x: x.loc[df_sa.loc[x.index, 'tier_score'].idxmax()],  # Select CUST_CLASS with highest tier
-    'CUST_CAT': lambda x: x.mode()[0] if not x.mode().empty else 'Unknown',  # Most frequent CUST_CAT
+    'CUST_CLASS': lambda x: x.iloc[x.index.map(lambda i: df_sa.loc[i, 'tier_score'].idxmax())] if x.index.isin(df_sa.index).all() else 'Unknown',  # Select CUST_CLASS with highest tier
+    'CUST_CAT': lambda x: x.mode()[0] if not x.mode().empty else 'Unknown',
     'SALARY': 'max',
     'STAFF': 'max',
     'NRI': 'max',
@@ -70,7 +75,7 @@ agg_dict = {
     'LOCKER': 'max',
     'TOTAL_PRODUCT': 'sum',
     'TOTAL_PRODUCT_EXCL_SERVICES': 'sum',
-    'JNT_ACCT_FLG': lambda x: 'Y' if 'Y' in x.values else 'N',  # Any account with joint flag
+    'JNT_ACCT_FLG': lambda x: 'Y' if 'Y' in x.values else 'N',
     'ACCT_OPN_DT': 'min',
     'LST_CUST_CR_DT': 'max',
     'LST_CUST_DR_DT': 'max',
@@ -172,4 +177,5 @@ def compute_product_score(row):
 df_customer['product_score'] = df_customer.apply(compute_product_score, axis=1)
 
 # Save the enhanced dataset
-df_customer.to_csv('customer_level_high_value_sa_dataset.csv', index=False)
+df_customer.to_csv('customer_level_high_value_sb_dataset.csv', index=False)
+print(f"Dataset saved with {len(df_customer)} customers.")
