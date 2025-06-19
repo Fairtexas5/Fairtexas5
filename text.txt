@@ -1,436 +1,264 @@
-"Feature Name","Type","Asset/Liability","Description"
-"END_OF_DAY_BAL","Numeric","Asset","End of day balance"
-"AVG_BAL_YTD","Numeric","Asset","Avg balance year-to-date"
-"AQB","Numeric","Asset","Average quarterly balance"
-"FD","Flag","Asset","Fixed deposit"
-"SAVINGS_BANK","Flag","Asset","Savings account flag"
-"product_diversity","Numeric","Asset","Number of asset products held"
-"digital_engagement","Numeric","Asset","Digital channel usage count"
-"balance_consistency","Numeric","Asset","Balance stability"
-"HOME_LOAN_AMT","Numeric","Liability","Home loan outstanding"
-"PERSONAL_LOAN","Flag","Liability","Personal loan indicator"
-"GOLD_LOAN","Flag","Liability","Gold loan indicator"
-"TDV","Numeric","Liability","Total debit value"
-"DR_NO","Numeric","Liability","Number of debits"
-"DR_AMT","Numeric","Liability","Amount of debits"
-"tier","Categorical","Segmentation","Customer tier"
-"CUST_CAT","Categorical","Segmentation","Customer category"
-"CUST_CLASS","Categorical","Segmentation","Customer class"
-"tenure_days","Numeric","Segmentation","Customer tenure in days"
-
-
-
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import matplotlib.pyplot as plt
-import seaborn as sns
-import warnings
-warnings.filterwarnings('ignore')
 
-# Load the data
+# Load dataset
 df = pd.read_csv('Book1_small.csv')
 
-print("Dataset shape:", df.shape)
-print("\nColumn names:")
-print(df.columns.tolist())
-print(f"\nPF_FAC_REPT values: {df['PF_FAC_REPT'].value_counts()}")
+# Convert date columns to datetime
+df['ACCT_OPN_DT'] = pd.to_datetime(df['ACCT_OPN_DT'], format='%d/%m/%y', errors='coerce')
+df['REPORT_DT'] = pd.to_datetime(df['REPORT_DT'], format='%d/%m/%y', errors='coerce')
+df['LST_CUST_CR_DT'] = pd.to_datetime(df['LST_CUST_CR_DT'], format='%d/%m/%y', errors='coerce')
+df['LST_CUST_DR_DT'] = pd.to_datetime(df['LST_CUST_DR_DT'], format='%d/%m/%y', errors='coerce')
 
-class BankingFeatureEngineering:
-    def __init__(self, data):
-        self.data = data.copy()
-        self.features_df = None
-        
-    def clean_data(self):
-        """Clean and prepare the dataset"""
-        df = self.data.copy()
-        
-        # Handle date columns
-        date_cols = ['ACCT_OPN_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT', 'REPORT_DT']
-        for col in date_cols:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], format='%d/%m/%y', errors='coerce')
-        
-        # Clean numeric columns - replace any non-numeric values
-        numeric_cols = ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD', 
-                       'DR_AMT', 'CR_AMT', 'TDV', 'AQB', 'HOME_LOAN_AMT']
-        
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        
-        # Clean flag columns - ensure they are 0 or 1
-        flag_cols = [col for col in df.columns if col not in numeric_cols + date_cols + 
-                    ['ACCT_NBR', 'CUST_NBR_BASE', 'CUST_NBR', 'PF_FAC_REPT', 'ACCT_STS', 
-                     'PRDCT_ID', 'JNT_ACCT_FLG', 'DR_FREEZE_STS', 'CUST_CAT', 'CUST_CLASS', 'REPORT_DT']]
-        
-        for col in flag_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                # Ensure binary flags
-                df[col] = df[col].apply(lambda x: 1 if x > 0 else 0)
-        
-        self.cleaned_data = df
-        print("Data cleaning completed")
-        return df
-    
-    def create_basic_features(self):
-        """Create fundamental banking features"""
-        df = self.cleaned_data.copy()
-        
-        # ==================== TENURE FEATURES ====================
-        if 'ACCT_OPN_DT' in df.columns and 'REPORT_DT' in df.columns:
-            df['tenure_days'] = (df['REPORT_DT'] - df['ACCT_OPN_DT']).dt.days
-            df['tenure_years'] = df['tenure_days'] / 365.25
-            df['tenure_months'] = df['tenure_days'] / 30.44
-        else:
-            df['tenure_days'] = df['tenure_years'] = df['tenure_months'] = 0
-        
-        # ==================== TRANSACTION FEATURES ====================
-        # Average transaction sizes
-        df['avg_debit_txn_size'] = np.where(df['DR_NO'] > 0, df['DR_AMT'] / df['DR_NO'], 0)
-        df['avg_credit_txn_size'] = np.where(df['CR_NO'] > 0, df['CR_AMT'] / df['CR_NO'], 0)
-        
-        # Transaction frequency (annualized)
-        df['total_transactions'] = df['DR_NO'] + df['CR_NO']
-        df['transaction_frequency_annual'] = np.where(df['tenure_days'] > 0, 
-                                                     df['total_transactions'] / df['tenure_days'] * 365, 0)
-        
-        # Transaction ratios
-        df['debit_credit_ratio'] = np.where(df['CR_AMT'] > 0, df['DR_AMT'] / df['CR_AMT'], 0)
-        df['net_flow'] = df['CR_AMT'] - df['DR_AMT']
-        
-        # ==================== BALANCE FEATURES ====================
-        # Balance stability metrics
-        df['balance_volatility'] = np.abs(df['END_OF_DAY_BAL'] - df['AVG_BAL_YTD']) / (df['AVG_BAL_YTD'] + 1)
-        df['balance_consistency'] = 1 / (1 + df['balance_volatility'])
-        
-        # Balance growth indicators
-        df['ytd_to_current_ratio'] = np.where(df['END_OF_DAY_BAL'] > 0, 
-                                             df['AVG_BAL_YTD'] / df['END_OF_DAY_BAL'], 0)
-        
-        # Account utilization for CA (assuming overdraft facility)
-        df['account_utilization'] = np.where((df['PF_FAC_REPT'] == 'CA') & (df['END_OF_DAY_BAL'] < 0),
-                                            np.abs(df['END_OF_DAY_BAL']) / (np.abs(df['END_OF_DAY_BAL']) + 100000),
-                                            0)
-        
-        # Interest earning potential
-        df['interest_earning_potential'] = df['INT_AVLABL'] * df['AVG_BAL_YTD'] / 100
-        
-        return df
-    
-    def create_product_features(self):
-        """Create product-related features - separate assets and liabilities"""
-        df = self.create_basic_features()
-        
-        # ==================== PRODUCT CATEGORIZATION ====================
-        # Asset products (deposits, savings)
-        asset_products = ['SAVINGS_BANK', 'FD', 'CA', 'RD']
-        df['asset_products_count'] = df[asset_products].sum(axis=1)
-        
-        # Liability products (loans) - separate as requested
-        liability_products = ['PENSION_LOAN', 'PERSONAL_LOAN', 'SME_LOAN', 'GOLD_LOAN', 
-                             'AGRI_LOAN', 'EDUCATION_LOAN', 'CAR_LOAN', 'TWO_WHEELER', 
-                             'HOME_LOAN', 'AGRI_GOLD_LOAN']
-        df['liability_products_count'] = df[liability_products].sum(axis=1)
-        
-        # Investment & Insurance products
-        investment_products = ['SBI_MF', 'SBI_LFE', 'SBI_GNRL', 'APY', 'NPS', 'PMJJY', 'PMSBY']
-        df['investment_products_count'] = df[investment_products].sum(axis=1)
-        
-        # Digital/Service products
-        digital_service_products = ['ATM', 'MBS', 'YONO', 'UPI', 'LOCKER', 'SBI_CAP', 'SBI_CARD', 'INB']
-        df['digital_service_count'] = df[digital_service_products].sum(axis=1)
-        
-        # Government/Social scheme products
-        govt_products = ['GOVT', 'SSA', 'DEAF', 'CGSP', 'CSP', 'DSP', 'ICGSP', 'OTHER_CSP', 
-                        'PMSP', 'PSP', 'RSP', 'SGSP']
-        df['govt_products_count'] = df[govt_products].sum(axis=1)
-        
-        # Specialty products
-        specialty_products = ['KCC', 'BANK_PARKING', 'FI_PRODUCT', 'ROHDIUM', 'PLATINUM', 
-                             'DIAMOND', 'GOLD', 'SILVER']
-        df['specialty_products_count'] = df[specialty_products].sum(axis=1)
-        
-        # ==================== PRODUCT ENGAGEMENT METRICS ====================
-        # Overall product diversity
-        df['total_product_diversity'] = (df['asset_products_count'] + 
-                                        df['liability_products_count'] + 
-                                        df['investment_products_count'] + 
-                                        df['digital_service_count'] + 
-                                        df['govt_products_count'] + 
-                                        df['specialty_products_count'])
-        
-        # Product engagement ratios
-        df['liability_to_asset_ratio'] = np.where(df['asset_products_count'] > 0,
-                                                 df['liability_products_count'] / df['asset_products_count'], 0)
-        
-        df['digital_engagement_ratio'] = np.where(df['total_product_diversity'] > 0,
-                                                 df['digital_service_count'] / df['total_product_diversity'], 0)
-        
-        return df
-    
-    def create_account_type_features(self):
-        """Create features specific to account types (PF_FAC_REPT)"""
-        df = self.create_product_features()
-        
-        # ==================== ACCOUNT TYPE SPECIFIC FEATURES ====================
-        # Savings Account (SB) specific features
-        df['is_savings_account'] = (df['PF_FAC_REPT'] == 'SB').astype(int)
-        
-        # For SB accounts - focus on savings behavior
-        df['sb_savings_efficiency'] = np.where(df['is_savings_account'] == 1,
-                                              df['balance_consistency'] * df['AVG_BAL_YTD'] / 100000, 0)
-        
-        # Current Account (CA) specific features  
-        df['is_current_account'] = (df['PF_FAC_REPT'] == 'CA').astype(int)
-        
-        # For CA accounts - focus on business activity
-        df['ca_business_activity'] = np.where(df['is_current_account'] == 1,
-                                             df['transaction_frequency_annual'] * df['avg_debit_txn_size'] / 1000000, 0)
-        
-        df['ca_turnover_ratio'] = np.where((df['is_current_account'] == 1) & (df['AVG_BAL_YTD'] > 0),
-                                          df['TDV'] / df['AVG_BAL_YTD'], 0)
-        
-        # ==================== CUSTOMER SEGMENT FEATURES ====================
-        # Encode customer categories
-        df['is_salary_package'] = (df['CUST_CAT'] == 'SALARY PACKAGE').astype(int)
-        df['is_general_public'] = (df['CUST_CAT'] == 'GENERAL PUBLIC').astype(int)
-        
-        # Customer class indicators
-        df['is_platinum'] = (df['CUST_CLASS'] == 'PLATINUM').astype(int)
-        df['is_gold'] = (df['CUST_CLASS'] == 'GOLD').astype(int)
-        df['is_diamond'] = (df['CUST_CLASS'] == 'DIAMOND').astype(int)
-        
-        return df
-    
-    def create_value_indicators(self):
-        """Create comprehensive value indicators for customers"""
-        df = self.create_account_type_features()
-        
-        # ==================== WEALTH INDICATORS ====================
-        # Primary wealth score
-        df['primary_wealth_score'] = (df['END_OF_DAY_BAL'] * 0.4 + 
-                                     df['AVG_BAL_YTD'] * 0.3 + 
-                                     df['AQB'] * 0.2 + 
-                                     df['TDV'] * 0.1)
-        
-        # Liability-adjusted wealth (subtract outstanding loans)
-        df['net_wealth_score'] = df['primary_wealth_score'] - df['HOME_LOAN_AMT']
-        
-        # Relationship value (considering tenure and products)
-        df['relationship_value'] = (df['primary_wealth_score'] * 
-                                   (1 + np.log1p(df['tenure_years'])) * 
-                                   (1 + df['total_product_diversity'] * 0.1))
-        
-        # ==================== PROFITABILITY INDICATORS ====================
-        # Revenue potential from balances
-        df['balance_revenue_potential'] = df['AVG_BAL_YTD'] * 0.03  # Assuming 3% spread
-        
-        # Fee income potential
-        df['fee_income_potential'] = (df['total_transactions'] * 2 +  # Transaction fees
-                                     df['digital_service_count'] * 100 +  # Service fees
-                                     df['liability_products_count'] * 1000)  # Loan processing fees
-        
-        # Total revenue potential
-        df['total_revenue_potential'] = df['balance_revenue_potential'] + df['fee_income_potential']
-        
-        # ==================== RISK INDICATORS ====================
-        # Account activity risk
-        df['inactivity_risk'] = np.where(df['total_transactions'] == 0, 1, 
-                                        np.exp(-df['transaction_frequency_annual'] / 12))
-        
-        # Balance volatility risk
-        df['volatility_risk'] = np.clip(df['balance_volatility'], 0, 1)
-        
-        # Concentration risk (too dependent on one product type)
-        df['product_concentration_risk'] = np.where(df['total_product_diversity'] > 0,
-                                                   1 - (df['total_product_diversity'] - 1) / 10, 1)
-        
-        # ==================== ENGAGEMENT SCORES ====================
-        # Digital engagement score
-        df['digital_engagement_score'] = (df['YONO'] * 3 + df['UPI'] * 2 + df['ATM'] * 1 + 
-                                         df['MBS'] * 2 + df['INB'] * 2) / 10
-        
-        # Overall engagement score
-        df['overall_engagement'] = (df['digital_engagement_score'] * 0.4 + 
-                                   df['transaction_frequency_annual'] / 100 * 0.3 +
-                                   df['total_product_diversity'] / 10 * 0.3)
-        
-        return df
-    
-    def get_feature_summary(self):
-        """Get summary of all created features"""
-        df = self.create_value_indicators()
-        
-        # Categorize features for easy reference
-        feature_categories = {
-            'Account & Demographics': [
-                'PF_FAC_REPT', 'is_savings_account', 'is_current_account',
-                'is_salary_package', 'is_general_public', 
-                'is_platinum', 'is_gold', 'is_diamond'
-            ],
-            
-            'Balance & Wealth Features': [
-                'END_OF_DAY_BAL', 'AVG_BAL_YTD', 'AQB', 'TDV',
-                'primary_wealth_score', 'net_wealth_score', 'relationship_value',
-                'balance_consistency', 'balance_volatility', 'interest_earning_potential'
-            ],
-            
-            'Transaction Features': [
-                'total_transactions', 'transaction_frequency_annual',
-                'avg_debit_txn_size', 'avg_credit_txn_size', 
-                'debit_credit_ratio', 'net_flow'
-            ],
-            
-            'Product Features (Separate Categories)': [
-                'asset_products_count', 'liability_products_count',
-                'investment_products_count', 'digital_service_count',
-                'govt_products_count', 'specialty_products_count',
-                'total_product_diversity', 'LIABILITY_TO_ASSET_RATIO'
-            ],
-            
-            'Account Type Specific': [
-                'sb_savings_efficiency', 'ca_business_activity', 
-                'ca_turnover_ratio', 'account_utilization'
-            ],
-            
-            'Loan Features (Separate)': [
-                'HOME_LOAN_AMT', 'liability_products_count'
-            ],
-            
-            'Revenue & Profitability': [
-                'balance_revenue_potential', 'fee_income_potential',
-                'total_revenue_potential'
-            ],
-            
-            'Risk Indicators': [
-                'inactivity_risk', 'volatility_risk', 'product_concentration_risk'
-            ],
-            
-            'Engagement Metrics': [
-                'digital_engagement_score', 'overall_engagement',
-                'digital_engagement_ratio'
-            ],
-            
-            'Tenure Features': [
-                'tenure_days', 'tenure_years', 'tenure_months'
-            ]
-        }
-        
-        self.final_features = df
-        self.feature_categories = feature_categories
-        
-        print("FEATURE ENGINEERING SUMMARY")
-        print("=" * 50)
-        
-        for category, features in feature_categories.items():
-            print(f"\n{category}:")
-            available_features = [f for f in features if f in df.columns]
-            for feature in available_features:
-                print(f"  • {feature}")
-        
-        print(f"\nTotal features created: {len([f for features in feature_categories.values() for f in features])}")
-        print(f"Dataset shape: {df.shape}")
-        
-        return df, feature_categories
-    
-    def analyze_by_account_type(self):
-        """Analyze features by account type (PF_FAC_REPT)"""
-        df, _ = self.get_feature_summary()
-        
-        print("\nACCOUNT TYPE ANALYSIS")
-        print("=" * 50)
-        
-        # Basic statistics by account type
-        account_type_summary = df.groupby('PF_FAC_REPT').agg({
-            'END_OF_DAY_BAL': ['count', 'mean', 'median', 'std'],
-            'AVG_BAL_YTD': ['mean', 'median'],
-            'primary_wealth_score': ['mean', 'median'],
-            'total_product_diversity': ['mean', 'median'],
-            'transaction_frequency_annual': ['mean', 'median'],
-            'digital_engagement_score': ['mean', 'median'],
-            'tenure_years': ['mean', 'median'],
-            'HOME_LOAN_AMT': ['mean', 'sum'],
-            'liability_products_count': ['mean', 'sum'],
-            'asset_products_count': ['mean', 'sum']
-        }).round(2)
-        
-        print("\nSummary by Account Type:")
-        print(account_type_summary)
-        
-        # Customer class distribution by account type
-        print("\nCustomer Class Distribution by Account Type:")
-        class_dist = pd.crosstab(df['PF_FAC_REPT'], df['CUST_CLASS'], normalize='index') * 100
-        print(class_dist.round(2))
-        
-        return account_type_summary
-    
-    def get_high_value_indicators(self, top_percentile=10):
-        """Identify high-value customer indicators"""
-        df, _ = self.get_feature_summary()
-        
-        print(f"\nHIGH-VALUE CUSTOMER INDICATORS (Top {top_percentile}%)")
-        print("=" * 60)
-        
-        # Calculate percentile thresholds
-        wealth_threshold = np.percentile(df['primary_wealth_score'], 100 - top_percentile)
-        relationship_threshold = np.percentile(df['relationship_value'], 100 - top_percentile)
-        revenue_threshold = np.percentile(df['total_revenue_potential'], 100 - top_percentile)
-        
-        print(f"Wealth Score Threshold (top {top_percentile}%): ₹{wealth_threshold:,.2f}")
-        print(f"Relationship Value Threshold (top {top_percentile}%): ₹{relationship_threshold:,.2f}")
-        print(f"Revenue Potential Threshold (top {top_percentile}%): ₹{revenue_threshold:,.2f}")
-        
-        # Create high-value flags
-        df['is_high_wealth'] = (df['primary_wealth_score'] >= wealth_threshold).astype(int)
-        df['is_high_relationship'] = (df['relationship_value'] >= relationship_threshold).astype(int)
-        df['is_high_revenue'] = (df['total_revenue_potential'] >= revenue_threshold).astype(int)
-        
-        # Composite high-value score
-        df['high_value_composite'] = (df['is_high_wealth'] + 
-                                     df['is_high_relationship'] + 
-                                     df['is_high_revenue'])
-        
-        # Analyze high-value customers by account type
-        high_value_analysis = df[df['high_value_composite'] >= 2].groupby('PF_FAC_REPT').agg({
-            'ACCT_NBR': 'count',
-            'primary_wealth_score': 'mean',
-            'relationship_value': 'mean',
-            'total_revenue_potential': 'mean',
-            'total_product_diversity': 'mean'
-        }).round(2)
-        
-        print(f"\nHigh-Value Customers by Account Type (Score >= 2):")
-        print(high_value_analysis)
-        
-        return df
+# Filter for 'SB' accounts
+df_sb = df[df['PF_FAC_REPT'] == 'SB'].copy()
 
-# Usage
-if __name__ == "__main__":
-    # Initialize feature engineering
-    feature_eng = BankingFeatureEngineering(df)
+# Check if df_sb is empty
+if df_sb.empty:
+    print("No 'SB' accounts found. Please verify 'PF_FAC_REPT' values.")
+    exit()
+
+# Handle tier columns - Fast approach
+tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
+tier_priority = {'ROHDIUM': 5, 'PLATINUM': 4, 'DIAMOND': 3, 'GOLD': 2, 'SILVER': 1}
+
+# Check for tier violations
+tier_violations = df_sb[df_sb[tier_cols].sum(axis=1) > 1]
+print(f"Found {len(tier_violations['CUST_NBR'].unique())} customers with multiple tier flags.")
+
+# Assign highest tier for rows with multiple tier flags
+def assign_highest_tier(row):
+    if row[tier_cols].sum() > 1:
+        highest_tier = max([(col, tier_priority[col]) for col in tier_cols if row[col] == 1], key=lambda x: x[1])[0]
+        for col in tier_cols:
+            row[col] = 1 if col == highest_tier else 0
+    return row
+
+df_sb = df_sb.apply(assign_highest_tier, axis=1)
+
+# Assign customer class based on tier
+def get_customer_class(row):
+    for tier in ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']:
+        if row[tier] == 1:
+            return tier
+    return 'Unknown'
+
+df_sb['CUST_CLASS'] = df_sb.apply(get_customer_class, axis=1)
+
+# Handle missing values - only fill TENURE_DAYS calculation
+reference_date = pd.to_datetime('2025-06-30')
+df_sb['TENURE_DAYS'] = (reference_date - df_sb['ACCT_OPN_DT']).dt.days
+
+# Fill missing TENURE_DAYS with median (due to missing ACCT_OPN_DT)
+df_sb['TENURE_DAYS'] = df_sb['TENURE_DAYS'].fillna(df_sb['TENURE_DAYS'].median())
+
+# Pre-aggregation feature engineering
+df_sb['AVG_DR_AMT'] = df_sb['DR_AMT'] / df_sb['DR_NO'].replace(0, 1)
+df_sb['AVG_CR_AMT'] = df_sb['CR_AMT'] / df_sb['CR_NO'].replace(0, 1)
+df_sb['DAYS_SINCE_LAST_CR'] = (reference_date - df_sb['LST_CUST_CR_DT']).dt.days
+df_sb['DAYS_SINCE_LAST_DR'] = (reference_date - df_sb['LST_CUST_DR_DT']).dt.days
+df_sb['net_flow_amt'] = df_sb['CR_AMT'] - df_sb['DR_AMT']
+df_sb['balance_utilization'] = (df_sb['DR_AMT'] + df_sb['CR_AMT']) / (df_sb['AVG_BAL_YTD'] + 1e-6)
+df_sb['peak_balance_ratio'] = df_sb['END_OF_DAY_BAL'] / (df_sb['AVG_BAL_YTD'] + 1e-6)
+
+# Product diversity calculation
+product_cols = ['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 'SBI_MF', 'UPI', 'INB']
+df_sb['product_diversity'] = df_sb[product_cols].gt(0).sum(axis=1) / len(product_cols)
+
+# Loan to investment ratio
+loan_cols = ['PERSONAL_LOAN', 'HOME_LOAN']
+investment_cols = ['FD', 'RD', 'SBI_MF']
+df_sb['loan_to_investment'] = df_sb[loan_cols].sum(axis=1) / (df_sb[investment_cols].sum(axis=1) + 1e-6)
+
+# Digital to physical ratio
+digital_cols = ['MBS', 'YONO', 'UPI', 'INB']
+physical_cols = ['ATM', 'LOCKER']
+df_sb['digital_to_physical'] = df_sb[digital_cols].sum(axis=1) / (df_sb[physical_cols].sum(axis=1) + 1e-6)
+
+# Other features
+df_sb['agri_activity_flag'] = ((df_sb['AGRI'] == 1) & (df_sb['AGRI_LOAN'] > 0)).astype(int)
+df_sb['JNT_ACCT_FLG_NUM'] = df_sb['JNT_ACCT_FLG'].map({'Y': 2, 'N': 1}).fillna(1)
+df_sb['joint_adjusted_dr_amt'] = df_sb['DR_AMT'] / df_sb['JNT_ACCT_FLG_NUM']
+df_sb['days_since_last_txn'] = df_sb[['DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR']].min(axis=1, skipna=True)
+df_sb['dormancy_risk'] = (df_sb['days_since_last_txn'] > 90).astype(int)
+df_sb['product_adoption_rate'] = df_sb['TOTAL_PRODUCT'] / (df_sb['TENURE_DAYS'] / 365 + 1e-6)
+df_sb['product_balance_interaction'] = df_sb['TOTAL_PRODUCT'] * df_sb['AVG_BAL_YTD']
+df_sb['tenure_txn_interaction'] = df_sb['TENURE_DAYS'] * (df_sb['DR_NO'] + df_sb['CR_NO'])
+
+# Weighted scores - Digital engagement
+digital_features = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
+base_weights_digital = {'INB': 5, 'YONO': 4, 'MBS': 3, 'UPI': 2, 'ATM': 1}
+
+# Calculate overall and tier-based usage
+overall_usage_digital = df_sb[digital_features].mean()
+tier_usage_digital = df_sb.groupby('CUST_CLASS')[digital_features].mean()
+
+# Create tier-based weights
+weights_digital = {}
+for tier in tier_usage_digital.index:
+    weights_digital[tier] = {}
+    for feature in digital_features:
+        tier_avg = tier_usage_digital.loc[tier, feature]
+        overall_avg = overall_usage_digital[feature]
+        weights_digital[tier][feature] = base_weights_digital[feature] * (tier_avg / (overall_avg + 0.01))
+
+def compute_digital_engagement(row):
+    tier = row['CUST_CLASS']
+    if tier not in weights_digital:
+        return 0
     
-    # Step 1: Clean data
-    print("Step 1: Cleaning data...")
-    cleaned_df = feature_eng.clean_data()
+    score = 0
+    for feature in digital_features:
+        if row[feature] == 1:
+            score += weights_digital[tier][feature]
+    return score
+
+df_sb['digital_engagement'] = df_sb.apply(compute_digital_engagement, axis=1)
+
+# Transaction score
+transaction_features = ['DR_AMT', 'CR_AMT']
+base_weights_transaction = {'DR_AMT': 1, 'CR_AMT': 1}
+overall_usage_transaction = df_sb[transaction_features].mean()
+tier_usage_transaction = df_sb.groupby('CUST_CLASS')[transaction_features].mean()
+
+weights_transaction = {}
+for tier in tier_usage_transaction.index:
+    weights_transaction[tier] = {}
+    for feature in transaction_features:
+        tier_avg = tier_usage_transaction.loc[tier, feature]
+        overall_avg = overall_usage_transaction[feature]
+        weights_transaction[tier][feature] = base_weights_transaction[feature] * (tier_avg / (overall_avg + 0.01))
+
+def compute_transaction_score(row):
+    tier = row['CUST_CLASS']
+    if tier not in weights_transaction:
+        return 0
     
-    # Step 2: Get comprehensive feature summary
-    print("\nStep 2: Creating comprehensive features...")
-    final_df, feature_categories = feature_eng.get_feature_summary()
+    score = 0
+    for feature in transaction_features:
+        score += weights_transaction[tier][feature] * row[feature]
+    return score
+
+df_sb['transaction_score'] = df_sb.apply(compute_transaction_score, axis=1)
+
+# Product score
+product_features = ['FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN']
+base_weights_product = {'FD': 3, 'RD': 2, 'PERSONAL_LOAN': 4, 'HOME_LOAN': 5}
+overall_usage_product = df_sb[product_features].mean()
+tier_usage_product = df_sb.groupby('CUST_CLASS')[product_features].mean()
+
+weights_product = {}
+for tier in tier_usage_product.index:
+    weights_product[tier] = {}
+    for feature in product_features:
+        tier_avg = tier_usage_product.loc[tier, feature]
+        overall_avg = overall_usage_product[feature]
+        weights_product[tier][feature] = base_weights_product[feature] * (tier_avg / (overall_avg + 0.01))
+
+def compute_product_score(row):
+    tier = row['CUST_CLASS']
+    if tier not in weights_product:
+        return 0
     
-    # Step 3: Analyze by account type
-    print("\nStep 3: Analyzing by account type...")
-    account_analysis = feature_eng.analyze_by_account_type()
-    
-    # Step 4: Identify high-value indicators
-    print("\nStep 4: Creating high-value indicators...")
-    final_df_with_flags = feature_eng.get_high_value_indicators()
-    
-    # Show sample of final dataset
-    print("\nSample of final feature-engineered dataset:")
-    sample_cols = ['ACCT_NBR', 'PF_FAC_REPT', 'END_OF_DAY_BAL', 'primary_wealth_score', 
-                  'total_product_diversity', 'digital_engagement_score', 'high_value_composite']
-    print(final_df_with_flags[sample_cols].head(10))
-    
-    print(f"\nFinal dataset ready for analysis/clustering with {final_df_with_flags.shape[1]} features!")
+    score = 0
+    for feature in product_features:
+        if row[feature] == 1:
+            score += weights_product[tier][feature]
+    return score
+
+df_sb['product_score'] = df_sb.apply(compute_product_score, axis=1)
+
+# Aggregation dictionary
+agg_dict = {
+    'CUST_CLASS': 'first',
+    'CUST_CAT': lambda x: x.mode().iloc[0] if not x.mode().empty else x.iloc[0],
+    'SALARY': 'max',
+    'STAFF': 'max',
+    'NRI': 'max',
+    'AGRI': 'max',
+    'SME': 'max',
+    'SBF': 'max',
+    'SSI': 'max',
+    'END_OF_DAY_BAL': 'sum',
+    'AVG_BAL_MTD': 'sum',
+    'AVG_BAL_QTD': 'sum',
+    'AVG_BAL_YTD': 'sum',
+    'AQB': 'sum',
+    'TDV': 'sum',
+    'DR_AMT': 'sum',
+    'CR_AMT': 'sum',
+    'DR_NO': 'sum',
+    'CR_NO': 'sum',
+    'SAVINGS_BANK': 'max',
+    'FD': 'max',
+    'RD': 'max',
+    'PERSONAL_LOAN': 'max',
+    'HOME_LOAN': 'max',
+    'CAR_LOAN': 'max',
+    'TWO_WHEELER': 'max',
+    'EDUCATION_LOAN': 'max',
+    'GOLD_LOAN': 'max',
+    'AGRI_LOAN': 'max',
+    'SME_LOAN': 'max',
+    'HOME_LOAN_AMT': 'sum',
+    'SBI_MF': 'max',
+    'SBI_CAP': 'max',
+    'SBI_CARD': 'max',
+    'SBI_LFE': 'max',
+    'SBI_GNRL': 'max',
+    'APY': 'max',
+    'NPS': 'max',
+    'PMJJY': 'max',
+    'PMSBY': 'max',
+    'ATM': 'max',
+    'MBS': 'max',
+    'YONO': 'max',
+    'UPI': 'max',
+    'INB': 'max',
+    'LOCKER': 'max',
+    'TOTAL_PRODUCT': 'sum',
+    'TOTAL_PRODUCT_EXCL_SERVICES': 'sum',
+    'JNT_ACCT_FLG': lambda x: x.mode().iloc[0] if not x.mode().empty else 'N',
+    'ACCT_OPN_DT': 'min',
+    'LST_CUST_CR_DT': 'max',
+    'LST_CUST_DR_DT': 'max',
+    'REPORT_DT': 'max',
+    'TENURE_DAYS': 'max',
+    'AVG_DR_AMT': 'mean',
+    'AVG_CR_AMT': 'mean',
+    'DAYS_SINCE_LAST_CR': 'min',
+    'DAYS_SINCE_LAST_DR': 'min',
+    'net_flow_amt': 'sum',
+    'balance_utilization': 'mean',
+    'peak_balance_ratio': 'mean',
+    'product_diversity': 'mean',
+    'loan_to_investment': 'mean',
+    'digital_to_physical': 'mean',
+    'agri_activity_flag': 'max',
+    'joint_adjusted_dr_amt': 'sum',
+    'days_since_last_txn': 'min',
+    'dormancy_risk': 'max',
+    'product_adoption_rate': 'mean',
+    'product_balance_interaction': 'sum',
+    'tenure_txn_interaction': 'sum',
+    'digital_engagement': 'sum',
+    'transaction_score': 'sum',
+    'product_score': 'sum'
+}
+
+# Aggregate to customer level
+df_customer = df_sb.groupby('CUST_NBR').agg(agg_dict).reset_index()
+
+# Post-aggregation feature engineering (recalculate based on aggregated data)
+df_customer['JNT_ACCT_FLG_NUM'] = df_customer['JNT_ACCT_FLG'].map({'Y': 2, 'N': 1}).fillna(1)
+df_customer['joint_adjusted_dr_amt'] = df_customer['DR_AMT'] / df_customer['JNT_ACCT_FLG_NUM']
+df_customer['dormancy_risk'] = (df_customer['days_since_last_txn'] > 90).astype(int)
+df_customer['product_adoption_rate'] = df_customer['TOTAL_PRODUCT'] / (df_customer['TENURE_DAYS'] / 365 + 1e-6)
+df_customer['product_balance_interaction'] = df_customer['TOTAL_PRODUCT'] * df_customer['AVG_BAL_YTD']
+df_customer['tenure_txn_interaction'] = df_customer['TENURE_DAYS'] * (df_customer['DR_NO'] + df_customer['CR_NO'])
+
+# Save the enhanced dataset
+df_customer.to_csv('customer_level_high_value_sb_dataset.csv', index=False)
+print(f"Dataset saved with {len(df_customer)} customers.")
+print(f"Customer classes distribution:")
+print(df_customer['CUST_CLASS'].value_counts())
