@@ -18,53 +18,109 @@ if df_sb.empty:
     print("No 'SB' accounts found. Please verify 'PF_FAC_REPT' values.")
     exit()
 
-# Handle tier columns
+# Handle tier columns - Fast approach
 tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
 tier_priority = {'ROHDIUM': 5, 'PLATINUM': 4, 'DIAMOND': 3, 'GOLD': 2, 'SILVER': 1}
 
-# Calculate tier score for each row
-df_sb['tier_score'] = 0
-for col in tier_cols:
-    df_sb['tier_score'] += df_sb[col] * tier_priority[col]
+# Check for tier violations
+tier_violations = df_sb[df_sb[tier_cols].sum(axis=1) > 1]
+print(f"Found {len(tier_violations['CUST_NBR'].unique())} customers with multiple tier flags.")
 
-# Assign highest tier per customer
-def assign_highest_tier(group):
-    # Find the row with highest tier score
-    max_score_idx = group['tier_score'].idxmax()
-    
-    if group['tier_score'].max() > 0:
-        # Find which tier column has value 1 for the highest scoring row
-        tier_row = group.loc[max_score_idx]
-        highest_tier = None
-        
-        for tier in ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']:
-            if tier_row[tier] == 1:
-                highest_tier = tier
-                break
-        
-        # Assign the tier to all rows in the group
-        group['CUST_CLASS'] = highest_tier if highest_tier else 'Unknown'
-        
-        # Set tier flags - only the highest tier gets 1, others get 0
+# Assign highest tier for rows with multiple tier flags
+def assign_highest_tier(row):
+    if row[tier_cols].sum() > 1:
+        highest_tier = max([(col, tier_priority[col]) for col in tier_cols if row[col] == 1], key=lambda x: x[1])[0]
         for col in tier_cols:
-            group[col] = 1 if col == highest_tier else 0
-    else:
-        group['CUST_CLASS'] = 'Unknown'
-        for col in tier_cols:
-            group[col] = 0
-    
-    return group
+            row[col] = 1 if col == highest_tier else 0
+    return row
 
-df_sb = df_sb.groupby('CUST_NBR').apply(assign_highest_tier).reset_index(drop=True)
+df_sb = df_sb.apply(assign_highest_tier, axis=1)
 
-# Handle missing values - only fill TENURE_DAYS calculation
+# Assign customer class based on tier
+def get_customer_class(row):
+    for tier in ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']:
+        if row[tier] == 1:
+            return tier
+    return 'Unknown'
+
+df_sb['CUST_CLASS'] = df_sb.apply(get_customer_class, axis=1)
+
+# Handle missing values - intelligent TENURE_DAYS filling
 reference_date = pd.to_datetime('2025-06-30')
 df_sb['TENURE_DAYS'] = (reference_date - df_sb['ACCT_OPN_DT']).dt.days
 
-# Fill missing TENURE_DAYS with median (due to missing ACCT_OPN_DT)
-df_sb['TENURE_DAYS'] = df_sb['TENURE_DAYS'].fillna(df_sb['TENURE_DAYS'].median())
+# Create a more intelligent approach to fill missing TENURE_DAYS
+def fill_tenure_days_intelligently(df):
+    # Create grouping features for similar customers
+    df['tenure_group'] = (
+        df['CUST_CLASS'].astype(str) + '_' + 
+        df['CUST_CAT'].astype(str) + '_' + 
+        pd.cut(df['AVG_BAL_YTD'], bins=5, labels=['Low', 'Med-Low', 'Med', 'Med-High', 'High']).astype(str)
+    )
+    
+    # Fill missing TENURE_DAYS using group medians first
+    df['TENURE_DAYS'] = df.groupby('tenure_group')['TENURE_DAYS'].transform(
+        lambda x: x.fillna(x.median())
+    )
+    
+    # For still missing values, use broader groups
+    df['TENURE_DAYS'] = df.groupby('CUST_CLASS')['TENURE_DAYS'].transform(
+        lambda x: x.fillna(x.median())
+    )
+    
+    # For any remaining missing values, use customer category
+    df['TENURE_DAYS'] = df.groupby('CUST_CAT')['TENURE_DAYS'].transform(
+        lambda x: x.fillna(x.median())
+    )
+    
+    # Final fallback to overall median
+    df['TENURE_DAYS'] = df['TENURE_DAYS'].fillna(df['TENURE_DAYS'].median())
+    
+    # Drop the temporary grouping column
+    df.drop('tenure_group', axis=1, inplace=True)
+    
+    return df
 
-# Pre-aggregation feature engineering
+df_sb = fill_tenure_days_intelligently(df_sb)
+print(f"Missing TENURE_DAYS after intelligent filling: {df_sb['TENURE_DAYS'].isna().sum()}")
+
+# Enhanced behavioral features for high-value customer segmentation
+df_sb['transaction_frequency'] = df_sb['DR_NO'] + df_sb['CR_NO']
+df_sb['transaction_velocity'] = df_sb['transaction_frequency'] / (df_sb['TENURE_DAYS'] + 1)
+df_sb['high_value_txn_ratio'] = (df_sb['DR_AMT'] + df_sb['CR_AMT']) / (df_sb['transaction_frequency'] + 1)
+df_sb['balance_stability'] = df_sb['AVG_BAL_YTD'] / (df_sb['END_OF_DAY_BAL'] + 1e-6)
+df_sb['wealth_accumulation'] = df_sb['END_OF_DAY_BAL'] / (df_sb['TENURE_DAYS'] / 365 + 1e-6)
+
+# Investment behavior indicators
+investment_products = ['FD', 'RD', 'SBI_MF', 'SBI_CAP', 'NPS']
+df_sb['investment_orientation'] = df_sb[investment_products].sum(axis=1)
+df_sb['investment_diversity'] = df_sb[investment_products].gt(0).sum(axis=1)
+
+# Loan sophistication
+loan_products = ['PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN', 'EDUCATION_LOAN']
+df_sb['loan_sophistication'] = df_sb[loan_products].sum(axis=1)
+df_sb['secured_loan_preference'] = (df_sb['HOME_LOAN'] + df_sb['CAR_LOAN']) / (df_sb['loan_sophistication'] + 1e-6)
+
+# Service usage patterns
+service_products = ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'LOCKER', 'APY', 'PMJJY', 'PMSBY']
+df_sb['service_adoption'] = df_sb[service_products].sum(axis=1)
+
+# Premium customer indicators
+df_sb['premium_banking'] = ((df_sb['CUST_CLASS'].isin(['ROHDIUM', 'PLATINUM', 'DIAMOND'])) & 
+                           (df_sb['AVG_BAL_YTD'] > df_sb['AVG_BAL_YTD'].quantile(0.8))).astype(int)
+
+# Channel preference sophistication
+df_sb['channel_sophistication'] = (df_sb['YONO'] * 3 + df_sb['INB'] * 2 + df_sb['UPI'] * 1.5 + 
+                                  df_sb['MBS'] * 1 + df_sb['ATM'] * 0.5)
+
+# Cross-sell success indicator
+df_sb['cross_sell_success'] = df_sb['TOTAL_PRODUCT'] / (df_sb['TENURE_DAYS'] / 365 + 1e-6)
+
+# Relationship depth
+df_sb['relationship_depth'] = (df_sb['investment_orientation'] + df_sb['loan_sophistication'] + 
+                              df_sb['service_adoption'] + df_sb['digital_engagement'])
+
+# Pre-aggregation feature engineering (updated)
 df_sb['AVG_DR_AMT'] = df_sb['DR_AMT'] / df_sb['DR_NO'].replace(0, 1)
 df_sb['AVG_CR_AMT'] = df_sb['CR_AMT'] / df_sb['CR_NO'].replace(0, 1)
 df_sb['DAYS_SINCE_LAST_CR'] = (reference_date - df_sb['LST_CUST_CR_DT']).dt.days
@@ -180,8 +236,9 @@ def compute_product_score(row):
 
 df_sb['product_score'] = df_sb.apply(compute_product_score, axis=1)
 
-# Aggregation dictionary
+# Enhanced aggregation dictionary for high-value customer behavior segmentation
 agg_dict = {
+    # Identity & Demographics
     'CUST_CLASS': 'first',
     'CUST_CAT': lambda x: x.mode().iloc[0] if not x.mode().empty else x.iloc[0],
     'SALARY': 'max',
@@ -191,6 +248,8 @@ agg_dict = {
     'SME': 'max',
     'SBF': 'max',
     'SSI': 'max',
+    
+    # Financial Position & Behavior
     'END_OF_DAY_BAL': 'sum',
     'AVG_BAL_MTD': 'sum',
     'AVG_BAL_QTD': 'sum',
@@ -201,6 +260,8 @@ agg_dict = {
     'CR_AMT': 'sum',
     'DR_NO': 'sum',
     'CR_NO': 'sum',
+    
+    # Product Holdings
     'SAVINGS_BANK': 'max',
     'FD': 'max',
     'RD': 'max',
@@ -222,19 +283,27 @@ agg_dict = {
     'NPS': 'max',
     'PMJJY': 'max',
     'PMSBY': 'max',
+    
+    # Channel Usage
     'ATM': 'max',
     'MBS': 'max',
     'YONO': 'max',
     'UPI': 'max',
     'INB': 'max',
     'LOCKER': 'max',
+    
+    # Product Metrics
     'TOTAL_PRODUCT': 'sum',
     'TOTAL_PRODUCT_EXCL_SERVICES': 'sum',
+    
+    # Account Characteristics
     'JNT_ACCT_FLG': lambda x: x.mode().iloc[0] if not x.mode().empty else 'N',
     'ACCT_OPN_DT': 'min',
     'LST_CUST_CR_DT': 'max',
     'LST_CUST_DR_DT': 'max',
     'REPORT_DT': 'max',
+    
+    # Basic Behavioral Features
     'TENURE_DAYS': 'max',
     'AVG_DR_AMT': 'mean',
     'AVG_CR_AMT': 'mean',
@@ -253,6 +322,24 @@ agg_dict = {
     'product_adoption_rate': 'mean',
     'product_balance_interaction': 'sum',
     'tenure_txn_interaction': 'sum',
+    
+    # Enhanced Behavioral Features for High-Value Segmentation
+    'transaction_frequency': 'sum',
+    'transaction_velocity': 'mean',
+    'high_value_txn_ratio': 'mean',
+    'balance_stability': 'mean',
+    'wealth_accumulation': 'mean',
+    'investment_orientation': 'max',
+    'investment_diversity': 'max',
+    'loan_sophistication': 'max',
+    'secured_loan_preference': 'mean',
+    'service_adoption': 'max',
+    'premium_banking': 'max',
+    'channel_sophistication': 'max',
+    'cross_sell_success': 'mean',
+    'relationship_depth': 'max',
+    
+    # Weighted Scores
     'digital_engagement': 'sum',
     'transaction_score': 'sum',
     'product_score': 'sum'
