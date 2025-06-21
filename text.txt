@@ -1,264 +1,41 @@
 import pandas as pd
-import numpy as np
+from sklearn.model_selection import train_test_split
 
-# Load dataset
-df = pd.read_csv('Book1_small.csv')
+# Load transaction files
+jan_txn = pd.read_csv('jan_txn.csv')
+feb_txn = pd.read_csv('feb_txn.csv')
+mar_txn = pd.read_csv('mar_txn.csv')
 
-# Convert date columns to datetime
-df['ACCT_OPN_DT'] = pd.to_datetime(df['ACCT_OPN_DT'], format='%d/%m/%y', errors='coerce')
-df['REPORT_DT'] = pd.to_datetime(df['REPORT_DT'], format='%d/%m/%y', errors='coerce')
-df['LST_CUST_CR_DT'] = pd.to_datetime(df['LST_CUST_CR_DT'], format='%d/%m/%y', errors='coerce')
-df['LST_CUST_DR_DT'] = pd.to_datetime(df['LST_CUST_DR_DT'], format='%d/%m/%y', errors='coerce')
+# Get unique ACCT_NBR from all transaction files
+txn_acct_nbr = pd.concat([jan_txn['ACCT_NBR'], feb_txn['ACCT_NBR'], mar_txn['ACCT_NBR']]).unique()
 
-# Filter for 'SB' accounts
-df_sb = df[df['PF_FAC_REPT'] == 'SB'].copy()
+# Load main dataset
+main_df = pd.read_csv('Base_iter.csv')
 
-# Check if df_sb is empty
-if df_sb.empty:
-    print("No 'SB' accounts found. Please verify 'PF_FAC_REPT' values.")
-    exit()
+# Identify active CUST_NBR: customers with at least one ACCT_NBR in transactions
+active_cust_nbr = main_df[main_df['ACCT_NBR'].isin(txn_acct_nbr)]['CUST_NBR'].unique()
 
-# Handle tier columns - Fast approach
-tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
-tier_priority = {'ROHDIUM': 5, 'PLATINUM': 4, 'DIAMOND': 3, 'GOLD': 2, 'SILVER': 1}
+# Filter main dataset to include only accounts of active customers
+filtered_df = main_df[main_df['CUST_NBR'].isin(active_cust_nbr)]
 
-# Check for tier violations
-tier_violations = df_sb[df_sb[tier_cols].sum(axis=1) > 1]
-print(f"Found {len(tier_violations['CUST_NBR'].unique())} customers with multiple tier flags.")
+# Perform stratified sampling to get approximately 500,000 rows
+n_filtered = len(filtered_df)
+if n_filtered <= 500000:
+    # If filtered data is less than or equal to 500,000, take all
+    sampled_df = filtered_df
+else:
+    # Calculate sampling fraction
+    sampling_fraction = 500000 / n_filtered
+    # Stratified sampling by CUST_CLASS
+    sampled_df, _ = train_test_split(
+        filtered_df,
+        train_size=sampling_fraction,
+        stratify=filtered_df['CUST_CLASS'],
+        random_state=42
+    )
 
-# Assign highest tier for rows with multiple tier flags
-def assign_highest_tier(row):
-    if row[tier_cols].sum() > 1:
-        highest_tier = max([(col, tier_priority[col]) for col in tier_cols if row[col] == 1], key=lambda x: x[1])[0]
-        for col in tier_cols:
-            row[col] = 1 if col == highest_tier else 0
-    return row
+# Save the sampled dataset
+output_file = 'Base_iter_sampled.csv'
+sampled_df.to_csv(output_file, index=False)
 
-df_sb = df_sb.apply(assign_highest_tier, axis=1)
-
-# Assign customer class based on tier
-def get_customer_class(row):
-    for tier in ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']:
-        if row[tier] == 1:
-            return tier
-    return 'Unknown'
-
-df_sb['CUST_CLASS'] = df_sb.apply(get_customer_class, axis=1)
-
-# Handle missing values - only fill TENURE_DAYS calculation
-reference_date = pd.to_datetime('2025-06-30')
-df_sb['TENURE_DAYS'] = (reference_date - df_sb['ACCT_OPN_DT']).dt.days
-
-# Fill missing TENURE_DAYS with median (due to missing ACCT_OPN_DT)
-df_sb['TENURE_DAYS'] = df_sb['TENURE_DAYS'].fillna(df_sb['TENURE_DAYS'].median())
-
-# Pre-aggregation feature engineering
-df_sb['AVG_DR_AMT'] = df_sb['DR_AMT'] / df_sb['DR_NO'].replace(0, 1)
-df_sb['AVG_CR_AMT'] = df_sb['CR_AMT'] / df_sb['CR_NO'].replace(0, 1)
-df_sb['DAYS_SINCE_LAST_CR'] = (reference_date - df_sb['LST_CUST_CR_DT']).dt.days
-df_sb['DAYS_SINCE_LAST_DR'] = (reference_date - df_sb['LST_CUST_DR_DT']).dt.days
-df_sb['net_flow_amt'] = df_sb['CR_AMT'] - df_sb['DR_AMT']
-df_sb['balance_utilization'] = (df_sb['DR_AMT'] + df_sb['CR_AMT']) / (df_sb['AVG_BAL_YTD'] + 1e-6)
-df_sb['peak_balance_ratio'] = df_sb['END_OF_DAY_BAL'] / (df_sb['AVG_BAL_YTD'] + 1e-6)
-
-# Product diversity calculation
-product_cols = ['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 'SBI_MF', 'UPI', 'INB']
-df_sb['product_diversity'] = df_sb[product_cols].gt(0).sum(axis=1) / len(product_cols)
-
-# Loan to investment ratio
-loan_cols = ['PERSONAL_LOAN', 'HOME_LOAN']
-investment_cols = ['FD', 'RD', 'SBI_MF']
-df_sb['loan_to_investment'] = df_sb[loan_cols].sum(axis=1) / (df_sb[investment_cols].sum(axis=1) + 1e-6)
-
-# Digital to physical ratio
-digital_cols = ['MBS', 'YONO', 'UPI', 'INB']
-physical_cols = ['ATM', 'LOCKER']
-df_sb['digital_to_physical'] = df_sb[digital_cols].sum(axis=1) / (df_sb[physical_cols].sum(axis=1) + 1e-6)
-
-# Other features
-df_sb['agri_activity_flag'] = ((df_sb['AGRI'] == 1) & (df_sb['AGRI_LOAN'] > 0)).astype(int)
-df_sb['JNT_ACCT_FLG_NUM'] = df_sb['JNT_ACCT_FLG'].map({'Y': 2, 'N': 1}).fillna(1)
-df_sb['joint_adjusted_dr_amt'] = df_sb['DR_AMT'] / df_sb['JNT_ACCT_FLG_NUM']
-df_sb['days_since_last_txn'] = df_sb[['DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR']].min(axis=1, skipna=True)
-df_sb['dormancy_risk'] = (df_sb['days_since_last_txn'] > 90).astype(int)
-df_sb['product_adoption_rate'] = df_sb['TOTAL_PRODUCT'] / (df_sb['TENURE_DAYS'] / 365 + 1e-6)
-df_sb['product_balance_interaction'] = df_sb['TOTAL_PRODUCT'] * df_sb['AVG_BAL_YTD']
-df_sb['tenure_txn_interaction'] = df_sb['TENURE_DAYS'] * (df_sb['DR_NO'] + df_sb['CR_NO'])
-
-# Weighted scores - Digital engagement
-digital_features = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
-base_weights_digital = {'INB': 5, 'YONO': 4, 'MBS': 3, 'UPI': 2, 'ATM': 1}
-
-# Calculate overall and tier-based usage
-overall_usage_digital = df_sb[digital_features].mean()
-tier_usage_digital = df_sb.groupby('CUST_CLASS')[digital_features].mean()
-
-# Create tier-based weights
-weights_digital = {}
-for tier in tier_usage_digital.index:
-    weights_digital[tier] = {}
-    for feature in digital_features:
-        tier_avg = tier_usage_digital.loc[tier, feature]
-        overall_avg = overall_usage_digital[feature]
-        weights_digital[tier][feature] = base_weights_digital[feature] * (tier_avg / (overall_avg + 0.01))
-
-def compute_digital_engagement(row):
-    tier = row['CUST_CLASS']
-    if tier not in weights_digital:
-        return 0
-    
-    score = 0
-    for feature in digital_features:
-        if row[feature] == 1:
-            score += weights_digital[tier][feature]
-    return score
-
-df_sb['digital_engagement'] = df_sb.apply(compute_digital_engagement, axis=1)
-
-# Transaction score
-transaction_features = ['DR_AMT', 'CR_AMT']
-base_weights_transaction = {'DR_AMT': 1, 'CR_AMT': 1}
-overall_usage_transaction = df_sb[transaction_features].mean()
-tier_usage_transaction = df_sb.groupby('CUST_CLASS')[transaction_features].mean()
-
-weights_transaction = {}
-for tier in tier_usage_transaction.index:
-    weights_transaction[tier] = {}
-    for feature in transaction_features:
-        tier_avg = tier_usage_transaction.loc[tier, feature]
-        overall_avg = overall_usage_transaction[feature]
-        weights_transaction[tier][feature] = base_weights_transaction[feature] * (tier_avg / (overall_avg + 0.01))
-
-def compute_transaction_score(row):
-    tier = row['CUST_CLASS']
-    if tier not in weights_transaction:
-        return 0
-    
-    score = 0
-    for feature in transaction_features:
-        score += weights_transaction[tier][feature] * row[feature]
-    return score
-
-df_sb['transaction_score'] = df_sb.apply(compute_transaction_score, axis=1)
-
-# Product score
-product_features = ['FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN']
-base_weights_product = {'FD': 3, 'RD': 2, 'PERSONAL_LOAN': 4, 'HOME_LOAN': 5}
-overall_usage_product = df_sb[product_features].mean()
-tier_usage_product = df_sb.groupby('CUST_CLASS')[product_features].mean()
-
-weights_product = {}
-for tier in tier_usage_product.index:
-    weights_product[tier] = {}
-    for feature in product_features:
-        tier_avg = tier_usage_product.loc[tier, feature]
-        overall_avg = overall_usage_product[feature]
-        weights_product[tier][feature] = base_weights_product[feature] * (tier_avg / (overall_avg + 0.01))
-
-def compute_product_score(row):
-    tier = row['CUST_CLASS']
-    if tier not in weights_product:
-        return 0
-    
-    score = 0
-    for feature in product_features:
-        if row[feature] == 1:
-            score += weights_product[tier][feature]
-    return score
-
-df_sb['product_score'] = df_sb.apply(compute_product_score, axis=1)
-
-# Aggregation dictionary
-agg_dict = {
-    'CUST_CLASS': 'first',
-    'CUST_CAT': lambda x: x.mode().iloc[0] if not x.mode().empty else x.iloc[0],
-    'SALARY': 'max',
-    'STAFF': 'max',
-    'NRI': 'max',
-    'AGRI': 'max',
-    'SME': 'max',
-    'SBF': 'max',
-    'SSI': 'max',
-    'END_OF_DAY_BAL': 'sum',
-    'AVG_BAL_MTD': 'sum',
-    'AVG_BAL_QTD': 'sum',
-    'AVG_BAL_YTD': 'sum',
-    'AQB': 'sum',
-    'TDV': 'sum',
-    'DR_AMT': 'sum',
-    'CR_AMT': 'sum',
-    'DR_NO': 'sum',
-    'CR_NO': 'sum',
-    'SAVINGS_BANK': 'max',
-    'FD': 'max',
-    'RD': 'max',
-    'PERSONAL_LOAN': 'max',
-    'HOME_LOAN': 'max',
-    'CAR_LOAN': 'max',
-    'TWO_WHEELER': 'max',
-    'EDUCATION_LOAN': 'max',
-    'GOLD_LOAN': 'max',
-    'AGRI_LOAN': 'max',
-    'SME_LOAN': 'max',
-    'HOME_LOAN_AMT': 'sum',
-    'SBI_MF': 'max',
-    'SBI_CAP': 'max',
-    'SBI_CARD': 'max',
-    'SBI_LFE': 'max',
-    'SBI_GNRL': 'max',
-    'APY': 'max',
-    'NPS': 'max',
-    'PMJJY': 'max',
-    'PMSBY': 'max',
-    'ATM': 'max',
-    'MBS': 'max',
-    'YONO': 'max',
-    'UPI': 'max',
-    'INB': 'max',
-    'LOCKER': 'max',
-    'TOTAL_PRODUCT': 'sum',
-    'TOTAL_PRODUCT_EXCL_SERVICES': 'sum',
-    'JNT_ACCT_FLG': lambda x: x.mode().iloc[0] if not x.mode().empty else 'N',
-    'ACCT_OPN_DT': 'min',
-    'LST_CUST_CR_DT': 'max',
-    'LST_CUST_DR_DT': 'max',
-    'REPORT_DT': 'max',
-    'TENURE_DAYS': 'max',
-    'AVG_DR_AMT': 'mean',
-    'AVG_CR_AMT': 'mean',
-    'DAYS_SINCE_LAST_CR': 'min',
-    'DAYS_SINCE_LAST_DR': 'min',
-    'net_flow_amt': 'sum',
-    'balance_utilization': 'mean',
-    'peak_balance_ratio': 'mean',
-    'product_diversity': 'mean',
-    'loan_to_investment': 'mean',
-    'digital_to_physical': 'mean',
-    'agri_activity_flag': 'max',
-    'joint_adjusted_dr_amt': 'sum',
-    'days_since_last_txn': 'min',
-    'dormancy_risk': 'max',
-    'product_adoption_rate': 'mean',
-    'product_balance_interaction': 'sum',
-    'tenure_txn_interaction': 'sum',
-    'digital_engagement': 'sum',
-    'transaction_score': 'sum',
-    'product_score': 'sum'
-}
-
-# Aggregate to customer level
-df_customer = df_sb.groupby('CUST_NBR').agg(agg_dict).reset_index()
-
-# Post-aggregation feature engineering (recalculate based on aggregated data)
-df_customer['JNT_ACCT_FLG_NUM'] = df_customer['JNT_ACCT_FLG'].map({'Y': 2, 'N': 1}).fillna(1)
-df_customer['joint_adjusted_dr_amt'] = df_customer['DR_AMT'] / df_customer['JNT_ACCT_FLG_NUM']
-df_customer['dormancy_risk'] = (df_customer['days_since_last_txn'] > 90).astype(int)
-df_customer['product_adoption_rate'] = df_customer['TOTAL_PRODUCT'] / (df_customer['TENURE_DAYS'] / 365 + 1e-6)
-df_customer['product_balance_interaction'] = df_customer['TOTAL_PRODUCT'] * df_customer['AVG_BAL_YTD']
-df_customer['tenure_txn_interaction'] = df_customer['TENURE_DAYS'] * (df_customer['DR_NO'] + df_customer['CR_NO'])
-
-# Save the enhanced dataset
-df_customer.to_csv('customer_level_high_value_sb_dataset.csv', index=False)
-print(f"Dataset saved with {len(df_customer)} customers.")
-print(f"Customer classes distribution:")
-print(df_customer['CUST_CLASS'].value_counts())
+print(f"Sampled dataset saved to {output_file} with {len(sampled_df)} rows.")
