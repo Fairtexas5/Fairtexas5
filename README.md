@@ -40,6 +40,8 @@ What I Do:
   <img alt="aws" src="https://img.shields.io/badge/AWS-%23232F3E?style=for-the-badge&logo=amazonwebservices&logoColor=%23232F3E&labelColor=white" />&nbsp;
   <img alt="css" src="https://img.shields.io/badge/CSS-%23663399?style=for-the-badge&logo=css&logoColor=%23663399&labelColor=white" />&nbsp;
   <img alt="html5" src="https://img.shields.io/badge/HTML-%23E34F26?style=for-the-badge&logo=html5&logoColor=%23E34F26&labelColor=white" />&nbsp;
+  <img alt="github" src="https://img.shields.io/badge/huggingface-%23FFD21E?style=for-the-badge&logo=huggingface&logoColor=%23FFD21E&labelColor=white&link=https%3A%2F%2Fhuggingface.co%2FAdieee5" />&nbsp;
+
 </p>
 
 
