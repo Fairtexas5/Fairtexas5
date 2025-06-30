@@ -1,283 +1,222 @@
-import pandas as pd
-import numpy as np
-from datetime import datetime
+# --- Step 1: Load and Process Monthly Transaction Data ---
+print("Step 1: Loading and processing monthly transaction data...")
 
-# --- Step 1: Load and Integrate Transaction Data ---
-# Load transaction CSVs
-jan_txn = pd.read_csv('jan_transactions.csv')
-feb_txn = pd.read_csv('feb_transactions.csv')
-mar_txn = pd.read_csv('mar_transactions.csv')
+try:
+    # Load transaction CSVs
+    jan_txn = pd.read_csv('jan_transactions.csv')
+    feb_txn = pd.read_csv('feb_transactions.csv')
+    mar_txn = pd.read_csv('mar_transactions.csv')
+    
+    # Standardize column names for each month
+    month_prefixes = ['JAN25', 'FEB25', 'MAR25']
+    txn_dfs = [jan_txn, feb_txn, mar_txn]
+    month_names = ['JAN', 'FEB', 'MAR']
+    
+    processed_monthly_data = {}
+    
+    for i, (df, month_prefix, month_name) in enumerate(zip(txn_dfs, month_prefixes, month_names)):
+        print(f"Processing {month_name} transactions...")
+        
+        # Standardize column names
+        df.columns = [col.replace(f'_{month_prefix}', '') for col in df.columns]
+        
+        # Define aggregation dictionary for this month
+        txn_agg_dict = {
+            'UPI_CR_CNT': 'sum',
+            'UPI_DR_CNT': 'sum', 
+            'UPI_CR_AMT': 'sum',
+            'UPI_DR_AMT': 'sum',
+            'NEFT_CR_CNT': 'sum',
+            'NEFT_DR_CNT': 'sum',
+            'NEFT_CR_AMT': 'sum',
+            'NEFT_DR_AMT': 'sum',
+            'RTGS_CR_CNT': 'sum',
+            'RTGS_DR_CNT': 'sum',
+            'RTGS_CR_AMT': 'sum',
+            'RTGS_DR_AMT': 'sum',
+            'AEPS_CR_CNT': 'sum',
+            'AEPS_DR_CNT': 'sum',
+            'AEPS_CR_AMT': 'sum',
+            'AEPS_DR_AMT': 'sum',
+            'BRNCH_CR_CNT': 'sum',
+            'BRNCH_DR_CNT': 'sum',
+            'BRNCH_CR_AMT': 'sum',
+            'BRNCH_DR_AMT': 'sum',
+            'INB_CR_CNT': 'sum',
+            'INB_DR_CNT': 'sum',
+            'INB_CR_AMT': 'sum',
+            'INB_DR_AMT': 'sum',
+        }
+        
+        # Check which columns exist in the data
+        existing_cols = [col for col in txn_agg_dict.keys() if col in df.columns]
+        filtered_agg_dict = {col: txn_agg_dict[col] for col in existing_cols}
+        
+        # Aggregate to account level for this month
+        monthly_account = df.groupby('ACCT_NBR').agg(filtered_agg_dict).reset_index()
+        
+        # Compute monthly totals
+        dr_cols = [col for col in ['UPI_DR_CNT', 'NEFT_DR_CNT', 'RTGS_DR_CNT', 'AEPS_DR_CNT', 'BRNCH_DR_CNT', 'INB_DR_CNT'] if col in monthly_account.columns]
+        cr_cols = [col for col in ['UPI_CR_CNT', 'NEFT_CR_CNT', 'RTGS_CR_CNT', 'AEPS_CR_CNT', 'BRNCH_CR_CNT', 'INB_CR_CNT'] if col in monthly_account.columns]
+        dr_amt_cols = [col for col in ['UPI_DR_AMT', 'NEFT_DR_AMT', 'RTGS_DR_AMT', 'AEPS_DR_AMT', 'BRNCH_DR_AMT', 'INB_DR_AMT'] if col in monthly_account.columns]
+        cr_amt_cols = [col for col in ['UPI_CR_AMT', 'NEFT_CR_AMT', 'RTGS_CR_AMT', 'AEPS_CR_AMT', 'BRNCH_CR_AMT', 'INB_CR_AMT'] if col in monthly_account.columns]
+        
+        monthly_account[f'DR_NO_{month_name}'] = monthly_account[dr_cols].sum(axis=1) if dr_cols else 0
+        monthly_account[f'CR_NO_{month_name}'] = monthly_account[cr_cols].sum(axis=1) if cr_cols else 0
+        monthly_account[f'DR_AMT_{month_name}'] = monthly_account[dr_amt_cols].sum(axis=1) if dr_amt_cols else 0
+        monthly_account[f'CR_AMT_{month_name}'] = monthly_account[cr_amt_cols].sum(axis=1) if cr_amt_cols else 0
+        monthly_account[f'TXN_CNT_{month_name}'] = monthly_account[f'DR_NO_{month_name}'] + monthly_account[f'CR_NO_{month_name}']
+        monthly_account[f'TXN_AMT_{month_name}'] = monthly_account[f'DR_AMT_{month_name}'] + monthly_account[f'CR_AMT_{month_name}']
+        
+        # Digital vs Traditional split for each month
+        digital_dr_cols = [col for col in ['UPI_DR_CNT', 'INB_DR_CNT'] if col in monthly_account.columns]
+        digital_cr_cols = [col for col in ['UPI_CR_CNT', 'INB_CR_CNT'] if col in monthly_account.columns]
+        digital_dr_amt_cols = [col for col in ['UPI_DR_AMT', 'INB_DR_AMT'] if col in monthly_account.columns]
+        digital_cr_amt_cols = [col for col in ['UPI_CR_AMT', 'INB_CR_AMT'] if col in monthly_account.columns]
+        
+        monthly_account[f'DIGITAL_TXN_CNT_{month_name}'] = (
+            monthly_account[digital_dr_cols].sum(axis=1) + monthly_account[digital_cr_cols].sum(axis=1) 
+            if digital_dr_cols or digital_cr_cols else 0
+        )
+        monthly_account[f'DIGITAL_TXN_AMT_{month_name}'] = (
+            monthly_account[digital_dr_amt_cols].sum(axis=1) + monthly_account[digital_cr_amt_cols].sum(axis=1) 
+            if digital_dr_amt_cols or digital_cr_amt_cols else 0
+        )
+        
+        # High value transactions (RTGS + NEFT)
+        hv_dr_cols = [col for col in ['RTGS_DR_CNT', 'NEFT_DR_CNT'] if col in monthly_account.columns]
+        hv_cr_cols = [col for col in ['RTGS_CR_CNT', 'NEFT_CR_CNT'] if col in monthly_account.columns]
+        hv_dr_amt_cols = [col for col in ['RTGS_DR_AMT', 'NEFT_DR_AMT'] if col in monthly_account.columns]
+        hv_cr_amt_cols = [col for col in ['RTGS_CR_AMT', 'NEFT_CR_AMT'] if col in monthly_account.columns]
+        
+        monthly_account[f'HV_TXN_CNT_{month_name}'] = (
+            monthly_account[hv_dr_cols].sum(axis=1) + monthly_account[hv_cr_cols].sum(axis=1) 
+            if hv_dr_cols or hv_cr_cols else 0
+        )
+        monthly_account[f'HV_TXN_AMT_{month_name}'] = (
+            monthly_account[hv_dr_amt_cols].sum(axis=1) + monthly_account[hv_cr_amt_cols].sum(axis=1) 
+            if hv_dr_amt_cols or hv_cr_amt_cols else 0
+        )
+        
+        # Keep only essential columns for this month
+        essential_cols = ['ACCT_NBR'] + [col for col in monthly_account.columns if month_name in col]
+        monthly_account = monthly_account[essential_cols]
+        
+        processed_monthly_data[month_name] = monthly_account
+        print(f"{month_name} data processed: {len(monthly_account)} accounts")
+    
+    print(f"All monthly transaction data processed successfully")
+    
+except Exception as e:
+    print(f"Warning: Could not load transaction data: {e}")
+    print("Proceeding without transaction data...")
+    processed_monthly_data = {}
 
-# Standardize column names
-month_prefixes = ['JAN25', 'FEB25', 'MAR25']
-txn_dfs = [jan_txn, feb_txn, mar_txn]
-for i, df in enumerate(txn_dfs):
-    month = month_prefixes[i]
-    df.columns = [col.replace(f'_{month}', '') for col in df.columns]
+# --- Step 2: Load Main Dataset and Merge Monthly Data ---
+print("Step 2: Loading main dataset and merging with monthly transaction data...")
 
-# Concatenate and aggregate to account level
-txn_df = pd.concat(txn_dfs, ignore_index=True)
-txn_agg_dict = {
-    'UPI_CR_CNT': 'sum',
-    'UPI_DR_CNT': 'sum',
-    'UPI_CR_AMT': 'sum',
-    'UPI_DR_AMT': 'sum',
-    'NEFT_CR_CNT': 'sum',
-    'NEFT_DR_CNT': 'sum',
-    'NEFT_CR_AMT': 'sum',
-    'NEFT_DR_AMT': 'sum',
-    'RTGS_CR_CNT': 'sum',
-    'RTGS_DR_CNT': 'sum',
-    'RTGS_CR_AMT': 'sum',
-    'RTGS_DR_AMT': 'sum',
-    'AEPS_CR_CNT': 'sum',
-    'AEPS_DR_CNT': 'sum',
-    'AEPS_CR_AMT': 'sum',
-    'AEPS_DR_AMT': 'sum',
-    'BRNCH_CR_CNT': 'sum',
-    'BRNCH_DR_CNT': 'sum',
-    'BRNCH_CR_AMT': 'sum',
-    'BRNCH_DR_AMT': 'sum',
-    'INB_CR_CNT': 'sum',
-    'INB_DR_CNT': 'sum',
-    'INB_CR_AMT': 'sum',
-    'INB_DR_AMT': 'sum',
-}
-txn_account = txn_df.groupby('ACCT_NBR').agg(txn_agg_dict).reset_index()
-
-# Compute total transactions
-txn_account['DR_NO'] = (txn_account['UPI_DR_CNT'] + txn_account['NEFT_DR_CNT'] +
-                        txn_account['RTGS_DR_CNT'] + txn_account['AEPS_DR_CNT'] +
-                        txn_account['BRNCH_DR_CNT'] + txn_account['INB_DR_CNT'])
-txn_account['CR_NO'] = (txn_account['UPI_CR_CNT'] + txn_account['NEFT_CR_CNT'] +
-                        txn_account['RTGS_CR_CNT'] + txn_account['AEPS_CR_CNT'] +
-                        txn_account['BRNCH_CR_CNT'] + txn_account['INB_CR_CNT'])
-txn_account['DR_AMT'] = (txn_account['UPI_DR_AMT'] + txn_account['NEFT_DR_AMT'] +
-                         txn_account['RTGS_DR_AMT'] + txn_account['AEPS_DR_AMT'] +
-                         txn_account['BRNCH_DR_AMT'] + txn_account['INB_DR_AMT'])
-txn_account['CR_AMT'] = (txn_account['UPI_CR_AMT'] + txn_account['NEFT_CR_AMT'] +
-                         txn_account['RTGS_CR_AMT'] + txn_account['AEPS_CR_AMT'] +
-                         txn_account['BRNCH_CR_AMT'] + txn_account['INB_CR_AMT'])
-txn_account = txn_account[['ACCT_NBR', 'DR_NO', 'CR_NO', 'DR_AMT', 'CR_AMT']]
-
-# --- Step 2: Load Main Dataset and Merge ---
 df = pd.read_csv('Book1_small.csv')
-df['ACCT_OPN_DT'] = pd.to_datetime(df['ACCT_OPN_DT'], format='%d/%m/%y', errors='coerce')
-df['REPORT_DT'] = pd.to_datetime(df['REPORT_DT'], format='%d/%m/%y', errors='coerce')
-df['LST_CUST_CR_DT'] = pd.to_datetime(df['LST_CUST_CR_DT'], format='%d/%m/%y', errors='coerce')
-df['LST_CUST_DR_DT'] = pd.to_datetime(df['LST_CUST_DR_DT'], format='%d/%m/%y', errors='coerce')
+
+# Convert date columns with error handling
+date_columns = ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
+for col in date_columns:
+    if col in df.columns:
+        df[col] = pd.to_datetime(df[col], format='%d/%m/%y', errors='coerce')
 
 OBSERVATION_PERIOD_DAYS = 90
-reference_date = df['REPORT_DT'].max()
-df_sb = df[df['PF_FAC_REPT'] == 'SB'].copy()
+reference_date = df['REPORT_DT'].max() if 'REPORT_DT' in df.columns else pd.Timestamp.now()
 
-# Merge with transaction data
-df_sb = df_sb.merge(txn_account, on='ACCT_NBR', how='left', suffixes=('', '_txn'))
-df_sb['DR_NO'] = df_sb['DR_NO_txn'].fillna(df_sb['DR_NO'])
-df_sb['CR_NO'] = df_sb['CR_NO_txn'].fillna(df_sb['CR_NO'])
-df_sb['DR_AMT'] = df_sb['DR_AMT_txn'].fillna(df_sb['DR_AMT'])
-df_sb['CR_AMT'] = df_sb['CR_AMT_txn'].fillna(df_sb['CR_AMT'])
-df_sb = df_sb.drop(columns=['DR_NO_txn', 'CR_NO_txn', 'DR_AMT_txn', 'CR_AMT_txn'])
+# Filter for savings bank accounts
+df_sb = df[df['PF_FAC_REPT'] == 'SB'].copy() if 'PF_FAC_REPT' in df.columns else df.copy()
 
-# --- Step 3: Load Customer Info Dataset ---
-customer_info = pd.read_csv('customer_info.csv')
-# Clean customer data
-customer_info['CUST_AGE'] = customer_info['CUST_AGE'].clip(upper=100)  # Cap age at 100
-customer_info['MRTL_STS'] = customer_info['MRTL_STS'].fillna('U')  # Fill missing marital status with 'U'
-customer_info['PANFLAG'] = customer_info['PANFLAG'].apply(lambda x: 1 if x == 8.0 else x).fillna(0)  # Convert 8.0 to 1
-customer_info['MOBILE_NBR'] = customer_info['MOBILE_NBR'].apply(lambda x: 1 if x == 8.0 else x).fillna(0)  # Convert 8.0 to 1
+# Merge with monthly transaction data
+if processed_monthly_data:
+    for month_name, monthly_data in processed_monthly_data.items():
+        print(f"Merging {month_name} transaction data...")
+        df_sb = df_sb.merge(monthly_data, on='ACCT_NBR', how='left', suffixes=('', f'_{month_name}_new'))
+        
+        # Fill missing values with 0 for transaction columns
+        month_cols = [col for col in monthly_data.columns if col != 'ACCT_NBR']
+        for col in month_cols:
+            if col in df_sb.columns:
+                df_sb[col] = df_sb[col].fillna(0)
+    
+    # Compute quarterly aggregates and trends
+    print("Computing quarterly aggregates and trends...")
+    
+    # Total quarterly values
+    months = ['JAN', 'FEB', 'MAR']
+    
+    # Quarterly totals
+    df_sb['DR_NO'] = sum(df_sb.get(f'DR_NO_{month}', 0) for month in months)
+    df_sb['CR_NO'] = sum(df_sb.get(f'CR_NO_{month}', 0) for month in months) 
+    df_sb['DR_AMT'] = sum(df_sb.get(f'DR_AMT_{month}', 0) for month in months)
+    df_sb['CR_AMT'] = sum(df_sb.get(f'CR_AMT_{month}', 0) for month in months)
+    df_sb['TXN_CNT_Q1'] = sum(df_sb.get(f'TXN_CNT_{month}', 0) for month in months)
+    df_sb['TXN_AMT_Q1'] = sum(df_sb.get(f'TXN_AMT_{month}', 0) for month in months)
+    df_sb['DIGITAL_TXN_CNT_Q1'] = sum(df_sb.get(f'DIGITAL_TXN_CNT_{month}', 0) for month in months)
+    df_sb['DIGITAL_TXN_AMT_Q1'] = sum(df_sb.get(f'DIGITAL_TXN_AMT_{month}', 0) for month in months)
+    df_sb['HV_TXN_CNT_Q1'] = sum(df_sb.get(f'HV_TXN_CNT_{month}', 0) for month in months)
+    df_sb['HV_TXN_AMT_Q1'] = sum(df_sb.get(f'HV_TXN_AMT_{month}', 0) for month in months)
+    
+    # Monthly averages
+    df_sb['TXN_CNT_AVG'] = df_sb['TXN_CNT_Q1'] / 3
+    df_sb['TXN_AMT_AVG'] = df_sb['TXN_AMT_Q1'] / 3
+    
+    # Compute trends and ratios
+    for metric in ['TXN_CNT', 'TXN_AMT', 'DIGITAL_TXN_CNT', 'DIGITAL_TXN_AMT', 'HV_TXN_CNT', 'HV_TXN_AMT']:
+        # Month-over-month growth rates
+        jan_val = df_sb.get(f'{metric}_JAN', 0)
+        feb_val = df_sb.get(f'{metric}_FEB', 0) 
+        mar_val = df_sb.get(f'{metric}_MAR', 0)
+        
+        # Growth rates (safe division)
+        df_sb[f'{metric}_FEB_GROWTH'] = ((feb_val - jan_val) / (jan_val + 1e-6)) * 100
+        df_sb[f'{metric}_MAR_GROWTH'] = ((mar_val - feb_val) / (feb_val + 1e-6)) * 100
+        df_sb[f'{metric}_Q1_GROWTH'] = ((mar_val - jan_val) / (jan_val + 1e-6)) * 100
+        
+        # Volatility (coefficient of variation)
+        mean_val = (jan_val + feb_val + mar_val) / 3
+        std_val = np.sqrt(((jan_val - mean_val)**2 + (feb_val - mean_val)**2 + (mar_val - mean_val)**2) / 3)
+        df_sb[f'{metric}_VOLATILITY'] = (std_val / (mean_val + 1e-6)) * 100
+        
+        # Trend direction (simple linear trend)
+        # 1 = increasing, 0 = flat, -1 = decreasing
+        df_sb[f'{metric}_TREND'] = np.where(
+            mar_val > jan_val, 1,
+            np.where(mar_val < jan_val, -1, 0)
+        )
+    
+    # Digital adoption ratios
+    df_sb['DIGITAL_TXN_RATIO'] = df_sb['DIGITAL_TXN_CNT_Q1'] / (df_sb['TXN_CNT_Q1'] + 1e-6)
+    df_sb['DIGITAL_AMT_RATIO'] = df_sb['DIGITAL_TXN_AMT_Q1'] / (df_sb['TXN_AMT_Q1'] + 1e-6)
+    df_sb['HV_TXN_RATIO'] = df_sb['HV_TXN_CNT_Q1'] / (df_sb['TXN_CNT_Q1'] + 1e-6)
+    df_sb['HV_AMT_RATIO'] = df_sb['HV_TXN_AMT_Q1'] / (df_sb['TXN_AMT_Q1'] + 1e-6)
+    
+    # Activity consistency (months with transactions > 0)
+    active_months = []
+    for month in months:
+        active_months.append((df_sb.get(f'TXN_CNT_{month}', 0) > 0).astype(int))
+    df_sb['ACTIVE_MONTHS'] = sum(active_months)
+    df_sb['ACTIVITY_CONSISTENCY'] = df_sb['ACTIVE_MONTHS'] / 3
+    
+    # Peak activity identification
+    txn_counts = [df_sb.get(f'TXN_CNT_{month}', 0) for month in months]
+    peak_month_idx = np.argmax(txn_counts, axis=0)
+    df_sb['PEAK_ACTIVITY_MONTH'] = [months[idx] for idx in peak_month_idx]
+    
+    # Balance and transaction relationship by month
+    for month in months:
+        if f'TXN_AMT_{month}' in df_sb.columns and 'AVG_BAL_MTD' in df_sb.columns:
+            df_sb[f'TXN_TO_BAL_RATIO_{month}'] = df_sb[f'TXN_AMT_{month}'] / (df_sb['AVG_BAL_MTD'] + 1e-6)
+    
+    print("Monthly transaction analysis completed")
+    
+else:
+    # If no transaction data, create placeholder columns
+    print("No transaction data available - creating placeholder columns")
+    for col in ['DR_NO', 'CR_NO', 'DR_AMT', 'CR_AMT']:
+        if col not in df_sb.columns:
+            df_sb[col] = 0
 
-# --- Step 4: Account-Level Feature Engineering ---
-# Compute weights for scores
-digital_features = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
-base_weights_digital = {'INB': 5, 'YONO': 4, 'MBS': 3, 'UPI': 2, 'ATM': 1}
-overall_usage_digital = df_sb[digital_features].mean()
-tier_usage_digital = df_sb.groupby('CUST_CLASS')[digital_features].mean()
-weights_digital = {tier: {feature: base_weights_digital[feature] * (tier_usage_digital.loc[tier, feature] / (overall_usage_digital[feature] + 0.01))
-                         for feature in digital_features} for tier in tier_usage_digital.index}
-
-transaction_features = ['DR_AMT', 'CR_AMT']
-base_weights_transaction = {'DR_AMT': 1, 'CR_AMT': 1}
-overall_usage_transaction = df_sb[transaction_features].mean()
-tier_usage_transaction = df_sb.groupby('CUST_CLASS')[transaction_features].mean()
-weights_transaction = {tier: {feature: base_weights_transaction[feature] * (tier_usage_transaction.loc[tier, feature] / (overall_usage_transaction[feature] + 0.01))
-                            for feature in transaction_features} for tier in tier_usage_transaction.index}
-
-product_features = ['FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN']
-base_weights_product = {'FD': 3, 'RD': 2, 'PERSONAL_LOAN': 4, 'HOME_LOAN': 5}
-overall_usage_product = df_sb[product_features].mean()
-tier_usage_product = df_sb.groupby('CUST_CLASS')[product_features].mean()
-weights_product = {tier: {feature: base_weights_product[feature] * (tier_usage_product.loc[tier, feature] / (overall_usage_product[feature] + 0.01))
-                          for feature in product_features} for tier in tier_usage_product.index}
-
-# Compute scores
-def compute_digital_engagement(row):
-    tier = row['CUST_CLASS']
-    if tier not in weights_digital:
-        return 0
-    return sum(weights_digital[tier][feature] for feature in digital_features if row[feature] == 1)
-df_sb['DIGITAL_ENGAGE'] = df_sb.apply(compute_digital_engagement, axis=1)
-
-def compute_transaction_score(row):
-    tier = row['CUST_CLASS']
-    if tier not in weights_transaction:
-        return 0
-    return weights_transaction[tier]['DR_AMT'] * row['DR_AMT'] + weights_transaction[tier]['CR_AMT'] * row['CR_AMT']
-df_sb['transaction_score'] = df_sb.apply(compute_transaction_score, axis=1)
-
-def compute_product_score(row):
-    tier = row['CUST_CLASS']
-    if tier not in weights_product:
-        return 0
-    return sum(weights_product[tier][feature] for feature in product_features if row[feature] == 1)
-df_sb['product_score'] = df_sb.apply(compute_product_score, axis=1)
-
-# --- Step 5: Customer-Level Aggregation ---
-customer_agg_dict = {
-    'CUST_CLASS': 'first',
-    'CUST_CAT': lambda x: x.mode().iloc[0] if not x.mode().empty else x.iloc[0],
-    'SALARY': 'max',
-    'STAFF': 'max',
-    'NRI': 'max',
-    'AGRI': 'max',
-    'SME': 'max',
-    'SBF': 'max',
-    'SSI': 'max',
-    'END_OF_DAY_BAL': 'sum',
-    'AVG_BAL_MTD': 'sum',
-    'AVG_BAL_QTD': 'sum',
-    'AVG_BAL_YTD': 'sum',
-    'AQB': 'sum',
-    'TDV': 'sum',
-    'DR_AMT': 'sum',
-    'CR_AMT': 'sum',
-    'DR_NO': 'sum',
-    'CR_NO': 'sum',
-    'SAVINGS_BANK': 'max',
-    'FD': 'max',
-    'RD': 'max',
-    'PERSONAL_LOAN': 'max',
-    'HOME_LOAN': 'max',
-    'CAR_LOAN': 'max',
-    'EDUCATION_LOAN': 'max',
-    'GOLD_LOAN': 'max',
-    'AGRI_LOAN': 'max',
-    'HOME_LOAN_AMT': 'sum',
-    'SBI_MF': 'max',
-    'SBI_CAP': 'max',
-    'SBI_CARD': 'max',
-    'SBI_LFE': 'max',
-    'SBI_GNRL': 'max',
-    'APY': 'max',
-    'NPS': 'max',
-    'PMJJY': 'max',
-    'PMSBY': 'max',
-    'ATM': 'max',
-    'MBS': 'max',
-    'YONO': 'max',
-    'UPI': 'max',
-    'INB': 'max',
-    'LOCKER': 'max',
-    'JNT_ACCT_FLAG': lambda x: x.mode().iloc[0] if not x.mode().empty else 'N',
-    'ACCT_OPN_DT': 'min',
-    'REPORT_DT': 'max',
-    'LST_CUST_CR_DT': 'max',
-    'LST_CUST_DR_DT': 'max',
-    'TENURE_DAYS': 'max',
-    'DIGITAL_ENGAGE': 'sum',
-    'transaction_score': 'sum',
-    'product_score': 'sum',
-}
-
-df_customer = df_sb.groupby('CUST_NBR').agg(customer_agg_dict).reset_index()
-
-# --- Step 6: Merge with Customer Info ---
-df_customer = df_customer.merge(customer_info[['CUST_NBR', 'CUST_CRTN', 'HOME_BRCH_NBR', 'PANFLAG', 'CUST_AGE', 'MRTL_STS', 'MOBILE_NBR']],
-                               on='CUST_NBR', how='left')
-
-# --- Step 7: Post-Aggregation Feature Engineering ---
-# Basic Counts
-df_customer['TXN_FREQ'] = df_customer['DR_NO'] + df_customer['CR_NO']
-df_customer['JNT_ACCT_FLG_NUM'] = df_customer['JNT_ACCT_FLAG'].map({'Y': 2, 'N': 1}).fillna(1)
-
-# Product Counts
-product_cols = ['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN',
-                'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN', 'SBI_MF', 'SBI_CAP', 'SBI_CARD',
-                'SBI_LFE', 'SBI_GNRL', 'APY', 'NPS', 'PMJJY', 'PMSBY']
-df_customer['TOTAL_PRODUCT'] = df_customer[product_cols].eq(1).sum(axis=1)
-df_customer['TOTAL_PRODUCT_EXCL_SERVICES'] = df_customer[product_cols].eq(1).sum(axis=1) - df_customer[service_cols].eq(1).sum(axis=1)
-
-# Behavioral Features
-df_customer['TXN_VELOCITY'] = df_customer['TXN_FREQ'] / OBSERVATION_PERIOD_DAYS
-df_customer['MTH_TXN_RATE'] = df_customer['TXN_FREQ'] / 3
-df_customer['AVG_TXN_AMT'] = (df_customer['DR_AMT'] + df_customer['CR_AMT']) / (df_customer['TXN_FREQ'] + 1e-6)
-df_customer['BAL_STAB'] = df_customer['AVG_BAL_QTD'] / (df_customer['END_OF_DAY_BAL'] + 1e-6)
-df_customer['BAL_GTH_IND'] = df_customer['END_OF_DAY_BAL'] / (df_customer['AVG_BAL_QTD'] + 1e-6)
-df_customer['MTH_BAL_TREND'] = df_customer['AVG_BAL_MTD'] / (df_customer['AVG_BAL_QTD'] + 1e-6)
-
-# Investment, Loan, and Service Features
-investment_products = ['FD', 'RD', 'SBI_MF', 'SBI_CAP', 'NPS']
-df_customer['INVEST_ORIENT'] = df_customer[investment_products].sum(axis=1)
-df_customer['INVEST_DIVERSITY'] = df_customer[investment_products].gt(0).sum(axis=1)
-
-loan_products = ['PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN', 'EDUCATION_LOAN']
-df_customer['LOAN_SOPHISTICATION'] = df_customer[loan_products].sum(axis=1)
-df_customer['SEC_LOAN_PREF'] = (df_customer['HOME_LOAN'] + df_customer['CAR_LOAN']) / (df_customer['LOAN_SOPHISTICATION'] + 1e-6)
-
-service_products = ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY']
-df_customer['SERV_ADOPT'] = df_customer[service_products].sum(axis=1)
-
-# Premium Banking Indicator
-df_customer['PREM_BANK'] = ((df_customer['CUST_CLASS'].isin(['ROHDIUM', 'PLATINUM', 'DIAMOND'])) &
-                            (df_customer['AVG_BAL_QTD'] > df_sb['AVG_BAL_QTD'].quantile(0.8))).astype(int)
-
-# Channel Sophistication
-df_customer['CHNNL_SOPHISTICATION'] = (df_customer['YONO'] * 3 + df_customer['INB'] * 2 + df_customer['UPI'] * 1.5 +
-                                      df_customer['MBS'] * 1 + df_customer['ATM'] * 0.5)
-
-# Cross-Sell Success
-df_customer['CROSS_SELL_SUCCESS'] = df_customer['TOTAL_PRODUCT'] / (df_customer['TENURE_DAYS'] / 365 + 1e-6)
-
-# Relationship Depth
-df_customer['RELATION_DEPTH'] = (df_customer['INVEST_ORIENT'] + df_customer['LOAN_SOPHISTICATION'] +
-                                df_customer['SERV_ADOPT'] + df_customer['DIGITAL_ENGAGE'])
-
-# Additional Features
-df_customer['AVG_DR_AMT'] = df_customer['DR_AMT'] / df_customer['DR_NO'].replace(0, 1)
-df_customer['AVG_CR_AMT'] = df_customer['CR_AMT'] / df_customer['CR_NO'].replace(0, 1)
-df_customer['DAYS_SINCE_LAST_CR'] = (reference_date - df_customer['LST_CUST_CR_DT']).dt.days
-df_customer['DAYS_SINCE_LAST_DR'] = (reference_date - df_customer['LST_CUST_DR_DT']).dt.days
-df_customer['DAY_SINCE_LST_TXN'] = df_customer[['DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR']].min(axis=1, skipna=True)
-df_customer['NET_FLOW_AMT'] = df_customer['CR_AMT'] - df_customer['DR_AMT']
-df_customer['NET_FLOW_RATIO'] = df_customer['NET_FLOW_AMT'] / (df_customer['CR_AMT'] + df_customer['DR_AMT'] + 1e-6)
-df_customer['BAL_UTIL'] = (df_customer['DR_AMT'] + df_customer['CR_AMT']) / (df_customer['AVG_BAL_QTD'] + 1e-6)
-df_customer['MTH_BAL_UTIL'] = df_customer['BAL_UTIL'] / 3
-df_customer['PROD_DIVERSITY'] = df_customer[['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 'SBI_MF', 'UPI', 'INB']].gt(0).sum(axis=1) / 8
-df_customer['LOAN_TO_INVEST'] = df_customer[['PERSONAL_LOAN', 'HOME_LOAN']].sum(axis=1) / (df_customer[['FD', 'RD', 'SBI_MF']].sum(axis=1) + 1e-6)
-df_customer['DIGI_TO_PHYS'] = df_customer[['MBS', 'YONO', 'UPI', 'INB']].sum(axis=1) / (df_customer[['ATM', 'LOCKER']].sum(axis=1) + 1e-6)
-df_customer['JNT_ACCT_DR_AMT'] = df_customer['DR_AMT'] / df_customer['JNT_ACCT_FLG_NUM']
-df_customer['DORM_RISK'] = (df_customer['DAY_SINCE_LST_TXN'] > 30).astype(int)
-df_customer['SEV_DORM_RISK'] = (df_customer['DAY_SINCE_LST_TXN'] > 60).astype(int)
-df_customer['TXN_INTENSITY'] = df_customer['TXN_FREQ'] / OBSERVATION_PERIOD_DAYS
-df_customer['TENURE_TXN_INTERACT'] = df_customer['TENURE_DAYS'] * df_customer['TXN_INTENSITY']
-df_customer['PROD_BAL_INTERACT'] = df_customer['TOTAL_PRODUCT'] * df_customer['AVG_BAL_QTD']
-df_customer['VAL_INTENSITY'] = (df_customer['DR_AMT'] + df_customer['CR_AMT']) / OBSERVATION_PERIOD_DAYS
-df_customer['CR_TO_DR_RATIO'] = df_customer['CR_AMT'] / (df_customer['DR_AMT'] + 1e-6)
-df_customer['TXN_CNT_RATIO'] = df_customer['CR_NO'] / (df_customer['DR_NO'] + 1e-6)
-df_customer['ACT_LVL'] = pd.cut(df_customer['TXN_FREQ'], bins=[0, 5, 20, 50, float('inf')],
-                                labels=['Low', 'Medium', 'High', 'Very_High'])
-
-# --- Step 8: Handle Missing Values ---
-df_customer['TENURE_DAYS'] = df_customer['TENURE_DAYS'].fillna(df_customer['TENURE_DAYS'].median())
-df_customer['CROSS_SELL_SUCCESS'] = df_customer['CROSS_SELL_SUCCESS'].fillna(0)
-df_customer['DAYS_SINCE_LAST_DR'] = df_customer['DAYS_SINCE_LAST_DR'].fillna(df_customer['DAYS_SINCE_LAST_DR'].max())
-df_customer['DAY_SINCE_LST_TXN'] = df_customer[['DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR']].min(axis=1, skipna=True)
-df_customer['CUST_CRTN'] = df_customer['CUST_CRTN'].fillna(df_customer['CUST_CRTN'].median())
-df_customer['HOME_BRCH_NBR'] = df_customer['HOME_BRCH_NBR'].fillna('Unknown')
-df_customer['PANFLAG'] = df_customer['PANFLAG'].fillna(0)
-df_customer['CUST_AGE'] = df_customer['CUST_AGE'].fillna(df_customer['CUST_AGE'].median())
-df_customer['MRTL_STS'] = df_customer['MRTL_STS'].fillna('U')
-df_customer['MOBILE_NBR'] = df_customer['MOBILE_NBR'].fillna(0)
-
-# Save output
-df_customer.to_csv('customer_segmentation_data.csv', index=False)
+print(f"Main dataset with monthly transactions: {len(df_sb)} records")
