@@ -1,5 +1,5 @@
-# --- Step 1: Load and Process Monthly Transaction Data ---
-print("Step 1: Loading and processing monthly transaction data...")
+# --- Step 1: Load and Process Transaction Data with Monthly Features ---
+print("Step 1: Loading and processing transaction data with monthly breakdown...")
 
 try:
     # Load transaction CSVs
@@ -7,264 +7,238 @@ try:
     feb_txn = pd.read_csv('feb_transactions.csv')
     mar_txn = pd.read_csv('mar_transactions.csv')
     
-    # Standardize column names and add month identifiers
+    # Standardize column names
     month_prefixes = ['JAN25', 'FEB25', 'MAR25']
-    month_names = ['JAN', 'FEB', 'MAR']
     txn_dfs = [jan_txn, feb_txn, mar_txn]
+    months = ['JAN', 'FEB', 'MAR']
     
-    processed_monthly_dfs = []
-    
-    for i, (df, month_prefix, month_name) in enumerate(zip(txn_dfs, month_prefixes, month_names)):
-        # Clean column names
-        df.columns = [col.replace(f'_{month_prefix}', '') for col in df.columns]
-        
+    for i, df in enumerate(txn_dfs):
+        month = month_prefixes[i]
+        df.columns = [col.replace(f'_{month}', '') for col in df.columns]
         # Add month identifier
-        df['MONTH'] = month_name
+        df['MONTH'] = months[i]
+    
+    # Concatenate all months
+    txn_df = pd.concat(txn_dfs, ignore_index=True)
+    
+    # Define key transaction channels for high-value customer segmentation
+    key_channels = ['UPI', 'NEFT', 'RTGS', 'INB']  # Focus on digital and high-value channels
+    
+    # Process each month separately first
+    monthly_features = {}
+    
+    for month in months:
+        month_data = txn_df[txn_df['MONTH'] == month].copy()
         
-        # Define aggregation dictionary for each month
+        if len(month_data) == 0:
+            continue
+            
+        # Define aggregation for key channels only
         month_agg_dict = {}
         
-        # Check which transaction columns exist in the data
-        transaction_columns = [
-            'UPI_CR_CNT', 'UPI_DR_CNT', 'UPI_CR_AMT', 'UPI_DR_AMT',
-            'NEFT_CR_CNT', 'NEFT_DR_CNT', 'NEFT_CR_AMT', 'NEFT_DR_AMT',
-            'RTGS_CR_CNT', 'RTGS_DR_CNT', 'RTGS_CR_AMT', 'RTGS_DR_AMT',
-            'AEPS_CR_CNT', 'AEPS_DR_CNT', 'AEPS_CR_AMT', 'AEPS_DR_AMT',
-            'BRNCH_CR_CNT', 'BRNCH_DR_CNT', 'BRNCH_CR_AMT', 'BRNCH_DR_AMT',
-            'INB_CR_CNT', 'INB_DR_CNT', 'INB_CR_AMT', 'INB_DR_AMT'
-        ]
+        # Key channels for high-value customers
+        for channel in key_channels:
+            if f'{channel}_CR_CNT' in month_data.columns:
+                month_agg_dict[f'{channel}_CR_CNT_{month}'] = f'{channel}_CR_CNT'
+            if f'{channel}_DR_CNT' in month_data.columns:
+                month_agg_dict[f'{channel}_DR_CNT_{month}'] = f'{channel}_DR_CNT'
+            if f'{channel}_CR_AMT' in month_data.columns:
+                month_agg_dict[f'{channel}_CR_AMT_{month}'] = f'{channel}_CR_AMT'
+            if f'{channel}_DR_AMT' in month_data.columns:
+                month_agg_dict[f'{channel}_DR_AMT_{month}'] = f'{channel}_DR_AMT'
         
-        existing_cols = [col for col in transaction_columns if col in df.columns]
-        
-        # Aggregate to account level for this month
-        for col in existing_cols:
-            month_agg_dict[col] = 'sum'
-        
+        # Aggregate by account
         if month_agg_dict:
-            month_account = df.groupby('ACCT_NBR').agg(month_agg_dict).reset_index()
+            month_account = month_data.groupby('ACCT_NBR').agg({
+                col: 'sum' for col in month_agg_dict.values() if col in month_data.columns
+            }).reset_index()
             
-            # Rename columns to include month prefix
-            for col in existing_cols:
-                month_account[f'{col}_{month_name}'] = month_account[col]
-                month_account = month_account.drop(columns=[col])
+            # Rename columns to include month
+            rename_dict = {v: k for k, v in month_agg_dict.items() if v in month_account.columns}
+            month_account = month_account.rename(columns=rename_dict)
             
-            # Calculate monthly totals
-            dr_cols = [col for col in existing_cols if 'DR_CNT' in col]
-            cr_cols = [col for col in existing_cols if 'CR_CNT' in col]
-            dr_amt_cols = [col for col in existing_cols if 'DR_AMT' in col]
-            cr_amt_cols = [col for col in existing_cols if 'CR_AMT' in col]
-            
-            month_account[f'DR_NO_{month_name}'] = df.groupby('ACCT_NBR')[dr_cols].sum().sum(axis=1) if dr_cols else 0
-            month_account[f'CR_NO_{month_name}'] = df.groupby('ACCT_NBR')[cr_cols].sum().sum(axis=1) if cr_cols else 0
-            month_account[f'DR_AMT_{month_name}'] = df.groupby('ACCT_NBR')[dr_amt_cols].sum().sum(axis=1) if dr_amt_cols else 0
-            month_account[f'CR_AMT_{month_name}'] = df.groupby('ACCT_NBR')[cr_amt_cols].sum().sum(axis=1) if cr_amt_cols else 0
-            
-            processed_monthly_dfs.append(month_account)
-            print(f"{month_name} transaction data processed: {len(month_account)} accounts")
-        else:
-            print(f"Warning: No transaction columns found in {month_name} data")
+            monthly_features[month] = month_account
     
-    # Merge all monthly data
-    if processed_monthly_dfs:
-        txn_account = processed_monthly_dfs[0]
-        for monthly_df in processed_monthly_dfs[1:]:
-            txn_account = txn_account.merge(monthly_df, on='ACCT_NBR', how='outer')
-        
-        # Fill missing values with 0 for accounts that don't exist in all months
+    # Merge monthly features
+    txn_account = None
+    for month, month_df in monthly_features.items():
+        if txn_account is None:
+            txn_account = month_df
+        else:
+            txn_account = txn_account.merge(month_df, on='ACCT_NBR', how='outer')
+    
+    if txn_account is not None:
+        # Fill NaN values with 0
         txn_account = txn_account.fillna(0)
         
-        print(f"Monthly transaction data merged: {len(txn_account)} total accounts")
-    else:
-        txn_account = None
-        print("No transaction data could be processed")
+        # --- Key Features for High-Value Customer Segmentation ---
+        
+        # 1. Total Quarterly Activity (sum across all months)
+        for channel in key_channels:
+            cr_cols = [f'{channel}_CR_CNT_{month}' for month in months if f'{channel}_CR_CNT_{month}' in txn_account.columns]
+            dr_cols = [f'{channel}_DR_CNT_{month}' for month in months if f'{channel}_DR_CNT_{month}' in txn_account.columns]
+            cr_amt_cols = [f'{channel}_CR_AMT_{month}' for month in months if f'{channel}_CR_AMT_{month}' in txn_account.columns]
+            dr_amt_cols = [f'{channel}_DR_AMT_{month}' for month in months if f'{channel}_DR_AMT_{month}' in txn_account.columns]
+            
+            if cr_cols:
+                txn_account[f'{channel}_TOTAL_CR_CNT'] = txn_account[cr_cols].sum(axis=1)
+            if dr_cols:
+                txn_account[f'{channel}_TOTAL_DR_CNT'] = txn_account[dr_cols].sum(axis=1)
+            if cr_amt_cols:
+                txn_account[f'{channel}_TOTAL_CR_AMT'] = txn_account[cr_amt_cols].sum(axis=1)
+            if dr_amt_cols:
+                txn_account[f'{channel}_TOTAL_DR_AMT'] = txn_account[dr_amt_cols].sum(axis=1)
+        
+        # 2. Month-over-Month Growth/Trend Analysis
+        for channel in key_channels:
+            # Transaction count trends
+            jan_col = f'{channel}_CR_CNT_JAN'
+            feb_col = f'{channel}_CR_CNT_FEB'
+            mar_col = f'{channel}_CR_CNT_MAR'
+            
+            if all(col in txn_account.columns for col in [jan_col, feb_col, mar_col]):
+                # Growth rates
+                txn_account[f'{channel}_CR_GROWTH_JAN_FEB'] = (txn_account[feb_col] - txn_account[jan_col]) / (txn_account[jan_col] + 1)
+                txn_account[f'{channel}_CR_GROWTH_FEB_MAR'] = (txn_account[mar_col] - txn_account[feb_col]) / (txn_account[feb_col] + 1)
+                
+                # Consistency score (lower variance = more consistent)
+                txn_account[f'{channel}_CR_CONSISTENCY'] = 1 / (1 + txn_account[[jan_col, feb_col, mar_col]].var(axis=1))
+            
+            # Amount trends
+            jan_amt_col = f'{channel}_CR_AMT_JAN'
+            feb_amt_col = f'{channel}_CR_AMT_FEB'
+            mar_amt_col = f'{channel}_CR_AMT_MAR'
+            
+            if all(col in txn_account.columns for col in [jan_amt_col, feb_amt_col, mar_amt_col]):
+                txn_account[f'{channel}_AMT_TREND'] = (txn_account[mar_amt_col] - txn_account[jan_amt_col]) / (txn_account[jan_amt_col] + 1)
+        
+        # 3. Channel Mix and Preferences
+        total_digital_cnt = 0
+        total_digital_amt = 0
+        
+        for channel in key_channels:
+            if f'{channel}_TOTAL_CR_CNT' in txn_account.columns:
+                total_digital_cnt += txn_account[f'{channel}_TOTAL_CR_CNT']
+            if f'{channel}_TOTAL_CR_AMT' in txn_account.columns:
+                total_digital_amt += txn_account[f'{channel}_TOTAL_CR_AMT']
+        
+        txn_account['TOTAL_DIGITAL_TXN_CNT'] = total_digital_cnt
+        txn_account['TOTAL_DIGITAL_TXN_AMT'] = total_digital_amt
+        
+        # Channel preferences (percentage of total activity)
+        for channel in key_channels:
+            if f'{channel}_TOTAL_CR_CNT' in txn_account.columns:
+                txn_account[f'{channel}_TXN_SHARE'] = txn_account[f'{channel}_TOTAL_CR_CNT'] / (txn_account['TOTAL_DIGITAL_TXN_CNT'] + 1)
+            if f'{channel}_TOTAL_CR_AMT' in txn_account.columns:
+                txn_account[f'{channel}_AMT_SHARE'] = txn_account[f'{channel}_TOTAL_CR_AMT'] / (txn_account['TOTAL_DIGITAL_TXN_AMT'] + 1)
+        
+        # 4. High-Value Transaction Indicators
+        # RTGS is typically for high-value transactions
+        if 'RTGS_TOTAL_CR_AMT' in txn_account.columns and 'RTGS_TOTAL_CR_CNT' in txn_account.columns:
+            txn_account['AVG_RTGS_TXN_SIZE'] = txn_account['RTGS_TOTAL_CR_AMT'] / (txn_account['RTGS_TOTAL_CR_CNT'] + 1)
+            txn_account['HIGH_VALUE_INDICATOR'] = (txn_account['RTGS_TOTAL_CR_AMT'] > 0).astype(int)
+        
+        # 5. Activity Consistency Score
+        monthly_totals = []
+        for month in months:
+            month_total = 0
+            for channel in key_channels:
+                if f'{channel}_CR_CNT_{month}' in txn_account.columns:
+                    month_total += txn_account[f'{channel}_CR_CNT_{month}']
+            monthly_totals.append(month_total)
+        
+        if len(monthly_totals) == 3:
+            monthly_df = pd.DataFrame(monthly_totals).T
+            txn_account['MONTHLY_ACTIVITY_VARIANCE'] = monthly_df.var(axis=1)
+            txn_account['ACTIVITY_CONSISTENCY_SCORE'] = 1 / (1 + txn_account['MONTHLY_ACTIVITY_VARIANCE'])
+        
+        # 6. Final Key Features Only (Remove individual monthly columns to reduce dimensionality)
+        key_features = ['ACCT_NBR']
+        
+        # Keep only aggregate and ratio features
+        pattern_keep = [
+            '_TOTAL_', '_SHARE', '_GROWTH_', '_CONSISTENCY', '_TREND', 
+            'TOTAL_DIGITAL_', 'AVG_RTGS_', 'HIGH_VALUE_', 'ACTIVITY_CONSISTENCY'
+        ]
+        
+        for col in txn_account.columns:
+            if any(pattern in col for pattern in pattern_keep):
+                key_features.append(col)
+        
+        # Keep only essential features
+        txn_account = txn_account[key_features]
+        
+        # Create final summary features for segmentation
+        txn_account['DR_NO'] = sum([txn_account[f'{ch}_TOTAL_DR_CNT'] for ch in key_channels if f'{ch}_TOTAL_DR_CNT' in txn_account.columns])
+        txn_account['CR_NO'] = sum([txn_account[f'{ch}_TOTAL_CR_CNT'] for ch in key_channels if f'{ch}_TOTAL_CR_CNT' in txn_account.columns])
+        txn_account['DR_AMT'] = sum([txn_account[f'{ch}_TOTAL_DR_AMT'] for ch in key_channels if f'{ch}_TOTAL_DR_AMT' in txn_account.columns])
+        txn_account['CR_AMT'] = sum([txn_account[f'{ch}_TOTAL_CR_AMT'] for ch in key_channels if f'{ch}_TOTAL_CR_AMT' in txn_account.columns])
+        
+        print(f"Transaction data processed: {len(txn_account)} accounts")
+        print(f"Key features created: {len([col for col in txn_account.columns if col != 'ACCT_NBR'])}")
+        print("Key features for high-value segmentation:")
+        for feature in [col for col in txn_account.columns if col != 'ACCT_NBR'][:10]:  # Show first 10
+            print(f"  - {feature}")
+        if len(txn_account.columns) > 11:
+            print(f"  ... and {len(txn_account.columns) - 11} more")
     
 except Exception as e:
     print(f"Warning: Could not load transaction data: {e}")
     print("Proceeding without transaction data...")
     txn_account = None
 
-# --- Step 1.5: Create Monthly Transaction Features and Ratios ---
+# --- Step 2: Enhanced Transaction Feature Engineering ---
+print("Step 2: Creating advanced transaction features for high-value segmentation...")
+
 if txn_account is not None:
-    print("Step 1.5: Creating monthly transaction features and ratios...")
+    # Digital Sophistication Score
+    digital_channels = ['UPI', 'NEFT', 'RTGS', 'INB']
+    digital_weights = {'INB': 4, 'RTGS': 3, 'NEFT': 2, 'UPI': 1}  # Higher weights for more sophisticated channels
     
-    months = ['JAN', 'FEB', 'MAR']
+    txn_account['DIGITAL_SOPHISTICATION'] = 0
+    for channel in digital_channels:
+        share_col = f'{channel}_TXN_SHARE'
+        if share_col in txn_account.columns:
+            weight = digital_weights.get(channel, 1)
+            txn_account['DIGITAL_SOPHISTICATION'] += txn_account[share_col] * weight
     
-    # Calculate quarterly totals
-    dr_no_cols = [f'DR_NO_{month}' for month in months if f'DR_NO_{month}' in txn_account.columns]
-    cr_no_cols = [f'CR_NO_{month}' for month in months if f'CR_NO_{month}' in txn_account.columns]
-    dr_amt_cols = [f'DR_AMT_{month}' for month in months if f'DR_AMT_{month}' in txn_account.columns]
-    cr_amt_cols = [f'CR_AMT_{month}' for month in months if f'CR_AMT_{month}' in txn_account.columns]
-    
-    if dr_no_cols:
-        txn_account['DR_NO'] = txn_account[dr_no_cols].sum(axis=1)
-    if cr_no_cols:
-        txn_account['CR_NO'] = txn_account[cr_no_cols].sum(axis=1)
-    if dr_amt_cols:
-        txn_account['DR_AMT'] = txn_account[dr_amt_cols].sum(axis=1)
-    if cr_amt_cols:
-        txn_account['CR_AMT'] = txn_account[cr_amt_cols].sum(axis=1)
-    
-    # Monthly trends and volatility
-    if len(dr_no_cols) >= 2:
-        txn_account['DR_NO_TREND'] = txn_account[dr_no_cols[-1]] - txn_account[dr_no_cols[0]]  # Mar - Jan
-        txn_account['DR_NO_VOLATILITY'] = txn_account[dr_no_cols].std(axis=1)
-        txn_account['DR_NO_GROWTH_RATE'] = (txn_account[dr_no_cols[-1]] / (txn_account[dr_no_cols[0]] + 1e-6)) - 1
-    
-    if len(cr_no_cols) >= 2:
-        txn_account['CR_NO_TREND'] = txn_account[cr_no_cols[-1]] - txn_account[cr_no_cols[0]]  # Mar - Jan
-        txn_account['CR_NO_VOLATILITY'] = txn_account[cr_no_cols].std(axis=1)
-        txn_account['CR_NO_GROWTH_RATE'] = (txn_account[cr_no_cols[-1]] / (txn_account[cr_no_cols[0]] + 1e-6)) - 1
-    
-    if len(dr_amt_cols) >= 2:
-        txn_account['DR_AMT_TREND'] = txn_account[dr_amt_cols[-1]] - txn_account[dr_amt_cols[0]]
-        txn_account['DR_AMT_VOLATILITY'] = txn_account[dr_amt_cols].std(axis=1)
-        txn_account['DR_AMT_GROWTH_RATE'] = (txn_account[dr_amt_cols[-1]] / (txn_account[dr_amt_cols[0]] + 1e-6)) - 1
-    
-    if len(cr_amt_cols) >= 2:
-        txn_account['CR_AMT_TREND'] = txn_account[cr_amt_cols[-1]] - txn_account[cr_amt_cols[0]]
-        txn_account['CR_AMT_VOLATILITY'] = txn_account[cr_amt_cols].std(axis=1)
-        txn_account['CR_AMT_GROWTH_RATE'] = (txn_account[cr_amt_cols[-1]] / (txn_account[cr_amt_cols[0]] + 1e-6)) - 1
-    
-    # Monthly ratios
-    for month in months:
-        if f'DR_AMT_{month}' in txn_account.columns and f'CR_AMT_{month}' in txn_account.columns:
-            # Credit to Debit ratio for each month
-            txn_account[f'CR_TO_DR_RATIO_{month}'] = txn_account[f'CR_AMT_{month}'] / (txn_account[f'DR_AMT_{month}'] + 1e-6)
-            
-            # Net flow for each month
-            txn_account[f'NET_FLOW_{month}'] = txn_account[f'CR_AMT_{month}'] - txn_account[f'DR_AMT_{month}']
-            
-            # Total activity for each month
-            txn_account[f'TOTAL_AMT_{month}'] = txn_account[f'CR_AMT_{month}'] + txn_account[f'DR_AMT_{month}']
-        
-        if f'DR_NO_{month}' in txn_account.columns and f'CR_NO_{month}' in txn_account.columns:
-            # Transaction count ratio for each month
-            txn_account[f'CR_TO_DR_CNT_RATIO_{month}'] = txn_account[f'CR_NO_{month}'] / (txn_account[f'DR_NO_{month}'] + 1e-6)
-            
-            # Total transaction count for each month
-            txn_account[f'TOTAL_TXN_{month}'] = txn_account[f'CR_NO_{month}'] + txn_account[f'DR_NO_{month}']
-        
-        # Average transaction amount per month
-        if f'TOTAL_AMT_{month}' in txn_account.columns and f'TOTAL_TXN_{month}' in txn_account.columns:
-            txn_account[f'AVG_TXN_AMT_{month}'] = txn_account[f'TOTAL_AMT_{month}'] / (txn_account[f'TOTAL_TXN_{month}'] + 1e-6)
-    
-    # Cross-month comparisons
-    if len(months) >= 2:
-        # Month-over-month changes
-        for i in range(1, len(months)):
-            prev_month = months[i-1]
-            curr_month = months[i]
-            
-            if f'TOTAL_AMT_{prev_month}' in txn_account.columns and f'TOTAL_AMT_{curr_month}' in txn_account.columns:
-                txn_account[f'AMT_MOM_CHANGE_{prev_month}_TO_{curr_month}'] = (
-                    txn_account[f'TOTAL_AMT_{curr_month}'] - txn_account[f'TOTAL_AMT_{prev_month}']
-                )
-                txn_account[f'AMT_MOM_GROWTH_{prev_month}_TO_{curr_month}'] = (
-                    txn_account[f'TOTAL_AMT_{curr_month}'] / (txn_account[f'TOTAL_AMT_{prev_month}'] + 1e-6)
-                ) - 1
-            
-            if f'TOTAL_TXN_{prev_month}' in txn_account.columns and f'TOTAL_TXN_{curr_month}' in txn_account.columns:
-                txn_account[f'TXN_MOM_CHANGE_{prev_month}_TO_{curr_month}'] = (
-                    txn_account[f'TOTAL_TXN_{curr_month}'] - txn_account[f'TOTAL_TXN_{prev_month}']
-                )
-                txn_account[f'TXN_MOM_GROWTH_{prev_month}_TO_{curr_month}'] = (
-                    txn_account[f'TOTAL_TXN_{curr_month}'] / (txn_account[f'TOTAL_TXN_{prev_month}'] + 1e-6)
-                ) - 1
-    
-    # Channel-wise monthly analysis
-    channels = ['UPI', 'NEFT', 'RTGS', 'AEPS', 'BRNCH', 'INB']
-    
-    for channel in channels:
-        channel_amt_cols = [f'{channel}_CR_AMT_{month}' for month in months 
-                           if f'{channel}_CR_AMT_{month}' in txn_account.columns]
-        channel_cnt_cols = [f'{channel}_CR_CNT_{month}' for month in months 
-                           if f'{channel}_CR_CNT_{month}' in txn_account.columns]
-        
-        if channel_amt_cols:
-            # Total channel usage across months
-            txn_account[f'{channel}_TOTAL_AMT'] = txn_account[channel_amt_cols].sum(axis=1)
-            
-            # Channel consistency (how many months was this channel used)
-            txn_account[f'{channel}_CONSISTENCY'] = (txn_account[channel_amt_cols] > 0).sum(axis=1)
-            
-            # Channel growth (first to last month)
-            if len(channel_amt_cols) >= 2:
-                txn_account[f'{channel}_GROWTH'] = (
-                    txn_account[channel_amt_cols[-1]] / (txn_account[channel_amt_cols[0]] + 1e-6)
-                ) - 1
-    
-    # Activity consistency across months
-    total_amt_cols = [f'TOTAL_AMT_{month}' for month in months if f'TOTAL_AMT_{month}' in txn_account.columns]
-    if total_amt_cols:
-        txn_account['ACTIVITY_CONSISTENCY'] = (txn_account[total_amt_cols] > 0).sum(axis=1)
-        txn_account['ACTIVITY_COEFFICIENT_VARIATION'] = (
-            txn_account[total_amt_cols].std(axis=1) / (txn_account[total_amt_cols].mean(axis=1) + 1e-6)
+    # Transaction Behavior Segments
+    if 'TOTAL_DIGITAL_TXN_CNT' in txn_account.columns and 'TOTAL_DIGITAL_TXN_AMT' in txn_account.columns:
+        # Create segments based on frequency and value
+        txn_account['TXN_FREQUENCY_SEGMENT'] = pd.cut(
+            txn_account['TOTAL_DIGITAL_TXN_CNT'],
+            bins=[-1, 0, 10, 50, 200, np.inf],
+            labels=['Inactive', 'Low', 'Medium', 'High', 'Very_High']
         )
-    
-    # Digital vs Traditional channel ratios
-    digital_channels = ['UPI', 'INB', 'MBS']  # Add MBS if available
-    traditional_channels = ['BRNCH', 'AEPS']
-    
-    for month in months:
-        digital_amt = 0
-        traditional_amt = 0
         
-        for channel in digital_channels:
-            if f'{channel}_CR_AMT_{month}' in txn_account.columns:
-                digital_amt += txn_account[f'{channel}_CR_AMT_{month}']
-                digital_amt += txn_account.get(f'{channel}_DR_AMT_{month}', 0)
+        txn_account['TXN_VALUE_SEGMENT'] = pd.cut(
+            txn_account['TOTAL_DIGITAL_TXN_AMT'],
+            bins=[-1, 0, 100000, 1000000, 10000000, np.inf],
+            labels=['No_Value', 'Low_Value', 'Medium_Value', 'High_Value', 'Premium_Value']
+        )
         
-        for channel in traditional_channels:
-            if f'{channel}_CR_AMT_{month}' in txn_account.columns:
-                traditional_amt += txn_account[f'{channel}_CR_AMT_{month}']
-                traditional_amt += txn_account.get(f'{channel}_DR_AMT_{month}', 0)
+        # Average transaction size
+        txn_account['AVG_TXN_SIZE'] = txn_account['TOTAL_DIGITAL_TXN_AMT'] / (txn_account['TOTAL_DIGITAL_TXN_CNT'] + 1)
         
-        if digital_amt > 0 or traditional_amt > 0:
-            txn_account[f'DIGITAL_AMT_{month}'] = digital_amt
-            txn_account[f'TRADITIONAL_AMT_{month}'] = traditional_amt
-            txn_account[f'DIGITAL_TO_TRADITIONAL_RATIO_{month}'] = digital_amt / (traditional_amt + 1e-6)
+        # High-value customer indicators
+        txn_account['PREMIUM_TXN_BEHAVIOR'] = (
+            (txn_account['TOTAL_DIGITAL_TXN_AMT'] > txn_account['TOTAL_DIGITAL_TXN_AMT'].quantile(0.8)) &
+            (txn_account['DIGITAL_SOPHISTICATION'] > txn_account['DIGITAL_SOPHISTICATION'].quantile(0.7))
+        ).astype(int)
     
-    print(f"Monthly transaction features created: {len([col for col in txn_account.columns if any(month in col for month in months)])} monthly features")
-
-# --- Step 2: Load Main Dataset and Merge (UPDATED) ---
-print("Step 2: Loading main dataset and merging with monthly transaction data...")
-
-df = pd.read_csv('Book1_small.csv')
-
-# Convert date columns with error handling
-date_columns = ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
-for col in date_columns:
-    if col in df.columns:
-        df[col] = pd.to_datetime(df[col], format='%d/%m/%y', errors='coerce')
-
-OBSERVATION_PERIOD_DAYS = 90
-reference_date = df['REPORT_DT'].max() if 'REPORT_DT' in df.columns else pd.Timestamp.now()
-
-# Filter for savings bank accounts
-df_sb = df[df['PF_FAC_REPT'] == 'SB'].copy() if 'PF_FAC_REPT' in df.columns else df.copy()
-
-# Merge with monthly transaction data if available
-if txn_account is not None:
-    print(f"Merging transaction data...")
-    print(f"Main dataset accounts: {len(df_sb['ACCT_NBR'].unique())}")
-    print(f"Transaction data accounts: {len(txn_account['ACCT_NBR'].unique())}")
+    # Keep only essential columns for merging
+    essential_cols = [
+        'ACCT_NBR', 'DR_NO', 'CR_NO', 'DR_AMT', 'CR_AMT',
+        'DIGITAL_SOPHISTICATION', 'ACTIVITY_CONSISTENCY_SCORE',
+        'TXN_FREQUENCY_SEGMENT', 'TXN_VALUE_SEGMENT', 'AVG_TXN_SIZE',
+        'PREMIUM_TXN_BEHAVIOR'
+    ]
     
-    # Check overlap
-    main_accounts = set(df_sb['ACCT_NBR'])
-    txn_accounts = set(txn_account['ACCT_NBR'])
-    overlap = len(main_accounts.intersection(txn_accounts))
-    print(f"Account overlap: {overlap} ({overlap/len(main_accounts)*100:.1f}%)")
+    # Add high-value indicators
+    high_value_cols = [col for col in txn_account.columns if 'HIGH_VALUE' in col or 'RTGS' in col or 'SHARE' in col]
+    essential_cols.extend([col for col in high_value_cols if col in txn_account.columns])
     
-    df_sb = df_sb.merge(txn_account, on='ACCT_NBR', how='left')
+    # Keep only essential columns
+    txn_account = txn_account[[col for col in essential_cols if col in txn_account.columns]]
     
-    # Fill missing transaction data with 0
-    txn_columns = [col for col in txn_account.columns if col != 'ACCT_NBR']
-    for col in txn_columns:
-        if col in df_sb.columns:
-            df_sb[col] = df_sb[col].fillna(0)
-    
-    print(f"Transaction data merged successfully")
-else:
-    print("No transaction data to merge")
-
-print(f"Main dataset prepared: {len(df_sb)} records")
+    print(f"Final transaction features: {len(txn_account.columns) - 1}")  # -1 for ACCT_NBR
