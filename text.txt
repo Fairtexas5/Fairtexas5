@@ -1,150 +1,186 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
 
-# --- Step 1: Load and Integrate Transaction Data ---
-print("Step 1: Loading and integrating transaction data...")
+# --- Step 1: Load and Process Transaction Data ---
+print("Step 1: Loading and processing monthly transaction data...")
 
-# Load transaction CSVs
-jan_txn = pd.read_csv('jan_transactions.csv')
-feb_txn = pd.read_csv('feb_transactions.csv')
-mar_txn = pd.read_csv('mar_transactions.csv')
+try:
+    # Load transaction CSVs
+    jan_txn = pd.read_csv('jan_transactions.csv')
+    feb_txn = pd.read_csv('feb_transactions.csv')
+    mar_txn = pd.read_csv('mar_transactions.csv')
 
-# Standardize column names
-month_prefixes = ['JAN25', 'FEB25', 'MAR25']
-txn_dfs = [jan_txn, feb_txn, mar_txn]
+    # Standardize column names
+    month_prefixes = ['JAN25', 'FEB25', 'MAR25']
+    txn_dfs = [jan_txn, feb_txn, mar_txn]
+    month_names = ['JAN', 'FEB', 'MAR']
 
-for i, df in enumerate(txn_dfs):
-    month = month_prefixes[i]
-    df.columns = [col.replace(f'_{month}', '') for col in df.columns]
+    for i, df in enumerate(txn_dfs):
+        month = month_prefixes[i]
+        df.columns = [col.replace(f'_{month}', '') for col in df.columns]
 
-# Concatenate and aggregate to account level
-txn_df = pd.concat(txn_dfs, ignore_index=True)
+    # Define key transaction columns
+    key_txn_cols = {
+        'UPI_CR_CNT': 'sum', 'UPI_DR_CNT': 'sum', 'UPI_CR_AMT': 'sum', 'UPI_DR_AMT': 'sum',
+        'NEFT_CR_CNT': 'sum', 'NEFT_DR_CNT': 'sum', 'NEFT_CR_AMT': 'sum', 'NEFT_DR_AMT': 'sum',
+        'RTGS_CR_CNT': 'sum', 'RTGS_DR_CNT': 'sum', 'RTGS_CR_AMT': 'sum', 'RTGS_DR_AMT': 'sum',
+        'INB_CR_CNT': 'sum', 'INB_DR_CNT': 'sum', 'INB_CR_AMT': 'sum', 'INB_DR_AMT': 'sum'
+    }
 
-# Define aggregation dictionary for transactions
-txn_agg_dict = {
-    'UPI_CR_CNT': 'sum',
-    'UPI_DR_CNT': 'sum',
-    'UPI_CR_AMT': 'sum',
-    'UPI_DR_AMT': 'sum',
-    'NEFT_CR_CNT': 'sum',
-    'NEFT_DR_CNT': 'sum',
-    'NEFT_CR_AMT': 'sum',
-    'NEFT_DR_AMT': 'sum',
-    'RTGS_CR_CNT': 'sum',
-    'RTGS_DR_CNT': 'sum',
-    'RTGS_CR_AMT': 'sum',
-    'RTGS_DR_AMT': 'sum',
-    'AEPS_CR_CNT': 'sum',
-    'AEPS_DR_CNT': 'sum',
-    'AEPS_CR_AMT': 'sum',
-    'AEPS_DR_AMT': 'sum',
-    'BRNCH_CR_CNT': 'sum',
-    'BRNCH_DR_CNT': 'sum',
-    'BRNCH_CR_AMT': 'sum',
-    'BRNCH_DR_AMT': 'sum',
-    'INB_CR_CNT': 'sum',
-    'INB_DR_CNT': 'sum',
-    'INB_CR_AMT': 'sum',
-    'INB_DR_AMT': 'sum',
-}
+    monthly_txn_data = []
 
-# Check which columns exist in the data
-existing_cols = [col for col in txn_agg_dict.keys() if col in txn_df.columns]
-filtered_agg_dict = {col: txn_agg_dict[col] for col in existing_cols}
+    # Process each month
+    for df, month_name in zip(txn_dfs, month_names):
+        print(f"Processing {month_name} transactions...")
 
-txn_account = txn_df.groupby('ACCT_NBR').agg(filtered_agg_dict).reset_index()
+        # Check for existing columns
+        existing_cols = [col for col in key_txn_cols.keys() if col in df.columns]
+        if not existing_cols:
+            print(f"No transaction columns found for {month_name}")
+            continue
 
-# Compute total transactions (only for existing columns)
-dr_cols = [col for col in ['UPI_DR_CNT', 'NEFT_DR_CNT', 'RTGS_DR_CNT', 'AEPS_DR_CNT', 'BRNCH_DR_CNT', 'INB_DR_CNT'] if col in txn_account.columns]
-cr_cols = [col for col in ['UPI_CR_CNT', 'NEFT_CR_CNT', 'RTGS_CR_CNT', 'AEPS_CR_CNT', 'BRNCH_CR_CNT', 'INB_CR_CNT'] if col in txn_account.columns]
-dr_amt_cols = [col for col in ['UPI_DR_AMT', 'NEFT_DR_AMT', 'RTGS_DR_AMT', 'AEPS_DR_AMT', 'BRNCH_DR_AMT', 'INB_DR_AMT'] if col in txn_account.columns]
-cr_amt_cols = [col for col in ['UPI_CR_AMT', 'NEFT_CR_AMT', 'RTGS_CR_AMT', 'AEPS_CR_AMT', 'BRNCH_CR_AMT', 'INB_CR_AMT'] if col in txn_account.columns]
+        filtered_agg_dict = {col: key_txn_cols[col] for col in existing_cols}
+        month_agg = df.groupby('ACCT_NBR').agg(filtered_agg_dict).reset_index()
 
-txn_account['DR_NO'] = txn_account[dr_cols].sum(axis=1) if dr_cols else 0
-txn_account['CR_NO'] = txn_account[cr_cols].sum(axis=1) if cr_cols else 0
-txn_account['DR_AMT'] = txn_account[dr_amt_cols].sum(axis=1) if dr_amt_cols else 0
-txn_account['CR_AMT'] = txn_account[cr_amt_cols].sum(axis=1) if cr_amt_cols else 0
+        # Compute monthly totals
+        dr_cnt_cols = [col for col in existing_cols if 'DR_CNT' in col]
+        cr_cnt_cols = [col for col in existing_cols if 'CR_CNT' in col]
+        dr_amt_cols = [col for col in existing_cols if 'DR_AMT' in col]
+        cr_amt_cols = [col for col in existing_cols if 'CR_AMT' in col]
 
-# Keep only necessary columns
-txn_account = txn_account[['ACCT_NBR', 'DR_NO', 'CR_NO', 'DR_AMT', 'CR_AMT']]
+        month_agg[f'{month_name}_DR_CNT'] = month_agg[dr_cnt_cols].sum(axis=1) if dr_cnt_cols else 0
+        month_agg[f'{month_name}_CR_CNT'] = month_agg[cr_cnt_cols].sum(axis=1) if cr_cnt_cols else 0
+        month_agg[f'{month_name}_DR_AMT'] = month_agg[dr_amt_cols].sum(axis=1) if dr_amt_cols else 0
+        month_agg[f'{month_name}_CR_AMT'] = month_agg[cr_amt_cols].sum(axis=1) if cr_amt_cols else 0
 
-print(f"Transaction data processed: {len(txn_account)} accounts")
+        # High-value transaction indicators
+        month_agg[f'{month_name}_HV_AMT'] = month_agg.get('RTGS_CR_AMT', 0) + month_agg.get('RTGS_DR_AMT', 0)
+        month_agg[f'{month_name}_HV_CNT'] = month_agg.get('RTGS_CR_CNT', 0) + month_agg.get('RTGS_DR_CNT', 0)
+
+        # Digital transaction indicators
+        digital_amt_cols = [col for col in existing_cols if any(prefix in col for prefix in ['UPI_', 'INB_']) and 'AMT' in col]
+        digital_cnt_cols = [col for col in existing_cols if any(prefix in col for prefix in ['UPI_', 'INB_']) and 'CNT' in col]
+        month_agg[f'{month_name}_DIG_AMT'] = month_agg[digital_amt_cols].sum(axis=1) if digital_amt_cols else 0
+        month_agg[f'{month_name}_DIG_CNT'] = month_agg[digital_cnt_cols].sum(axis=1) if digital_cnt_cols else 0
+
+        # Keep only key columns
+        key_monthly_cols = ['ACCT_NBR', f'{month_name}_DR_CNT', f'{month_name}_CR_CNT',
+                           f'{month_name}_DR_AMT', f'{month_name}_CR_AMT',
+                           f'{month_name}_HV_AMT', f'{month_name}_HV_CNT',
+                           f'{month_name}_DIG_AMT', f'{month_name}_DIG_CNT']
+        month_agg = month_agg[key_monthly_cols]
+        monthly_txn_data.append(month_agg)
+
+    # Merge all months
+    if monthly_txn_data:
+        txn_account = monthly_txn_data[0]
+        for month_data in monthly_txn_data[1:]:
+            txn_account = txn_account.merge(month_data, on='ACCT_NBR', how='outer')
+        txn_account = txn_account.fillna(0)
+
+        # Compute quarterly aggregates
+        for metric in ['DR_CNT', 'CR_CNT', 'DR_AMT', 'CR_AMT', 'HV_AMT', 'HV_CNT', 'DIG_AMT', 'DIG_CNT']:
+            cols = [f'{month}_{metric}' for month in month_names if f'{month}_{metric}' in txn_account.columns]
+            txn_account[f'Q1_TOTAL_{metric}'] = txn_account[cols].sum(axis=1) if cols else 0
+
+        # Compute ratios and trends
+        total_amt = txn_account['Q1_TOTAL_DR_AMT'] + txn_account['Q1_TOTAL_CR_AMT']
+        total_cnt = txn_account['Q1_TOTAL_DR_CNT'] + txn_account['Q1_TOTAL_CR_CNT']
+        txn_account['HV_AMT_RATIO'] = txn_account['Q1_HV_AMT'] / (total_amt + 1e-6)
+        txn_account['DIG_AMT_RATIO'] = txn_account['Q1_DIG_AMT'] / (total_amt + 1e-6)
+        txn_account['AVG_TXN_VALUE'] = total_amt / (total_cnt + 1e-6)
+
+        # Transaction growth trends
+        jan_total_cnt = txn_account['JAN_DR_CNT'] + txn_account['JAN_CR_CNT']
+        mar_total_cnt = txn_account['MAR_DR_CNT'] + txn_account['MAR_CR_CNT']
+        jan_total_amt = txn_account['JAN_DR_AMT'] + txn_account['JAN_CR_AMT']
+        mar_total_amt = txn_account['MAR_DR_AMT'] + txn_account['MAR_CR_AMT']
+        txn_account['TXN_CNT_GROWTH'] = (mar_total_cnt - jan_total_cnt) / (jan_total_cnt + 1e-6)
+        txn_account['TXN_AMT_GROWTH'] = (mar_total_amt - jan_total_amt) / (jan_total_amt + 1e-6)
+
+        # Transaction consistency
+        monthly_totals = pd.DataFrame({
+            f'{month}_TOTAL': txn_account[f'{month}_DR_AMT'] + txn_account[f'{month}_CR_AMT']
+            for month in month_names if f'{month}_DR_AMT' in txn_account.columns
+        })
+        txn_account['TXN_CONSISTENCY'] = 1 / (monthly_totals.std(axis=1) / (monthly_totals.mean(axis=1) + 1e-6) + 1e-6)
+
+        # Select final columns
+        final_txn_cols = [
+            'ACCT_NBR', 'Q1_TOTAL_DR_CNT', 'Q1_TOTAL_CR_CNT', 'Q1_TOTAL_DR_AMT', 'Q1_TOTAL_CR_AMT',
+            'Q1_HV_AMT', 'Q1_HV_CNT', 'Q1_DIG_AMT', 'Q1_DIG_CNT',
+            'HV_AMT_RATIO', 'DIG_AMT_RATIO', 'AVG_TXN_VALUE',
+            'TXN_CNT_GROWTH', 'TXN_AMT_GROWTH', 'TXN_CONSISTENCY'
+        ]
+        final_txn_cols = [col for col in final_txn_cols if col in txn_account.columns]
+        txn_account = txn_account[final_txn_cols]
+        print(f"Transaction data processed: {len(txn_account)} accounts with {len(final_txn_cols)-1} features")
+    else:
+        txn_account = None
+        print("No transaction data could be processed")
+
+except Exception as e:
+    print(f"Warning: Could not load transaction data: {e}")
+    txn_account = None
 
 # --- Step 2: Load Main Dataset and Merge ---
-print("Step 2: Loading main dataset...")
+print("Step 2: Loading main dataset and merging with transactions...")
 
-df = pd.read_csv('Book1_small.csv')
+try:
+    df = pd.read_csv('Book1_small.csv')
 
-# Convert date columns with error handling
-date_columns = ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
-for col in date_columns:
-    if col in df.columns:
-        df[col] = pd.to_datetime(df[col], format='%d/%m/%y', errors='coerce')
+    # Convert date columns
+    date_columns = ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
+    for col in date_columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], format='%d/%m/%y', errors='coerce')
 
-OBSERVATION_PERIOD_DAYS = 90
-reference_date = df['REPORT_DT'].max() if 'REPORT_DT' in df.columns else pd.Timestamp.now()
+    OBSERVATION_PERIOD_DAYS = 90
+    reference_date = df['REPORT_DT'].max() if 'REPORT_DT' in df.columns else pd.Timestamp.now()
 
-# Filter for savings bank accounts
-df_sb = df[df['PF_FAC_REPT'] == 'SB'].copy() if 'PF_FAC_REPT' in df.columns else df.copy()
+    # Filter for savings bank accounts
+    df_sb = df[df['PF_FAC_REPT'] == 'SB'].copy() if 'PF_FAC_REPT' in df.columns else df.copy()
 
-# Merge with transaction data if available
-if txn_account is not None:
-    df_sb = df_sb.merge(txn_account, on='ACCT_NBR', how='left', suffixes=('', '_txn'))
+    # Merge with transaction data
+    if txn_account is not None:
+        print(f"Merging {len(df_sb)} accounts with {len(txn_account)} transaction records...")
+        df_sb = df_sb.merge(txn_account, on='ACCT_NBR', how='left')
+        # Update legacy transaction columns
+        for col, q1_col in [('DR_NO', 'Q1_TOTAL_DR_CNT'), ('CR_NO', 'Q1_TOTAL_CR_CNT'),
+                           ('DR_AMT', 'Q1_TOTAL_DR_AMT'), ('CR_AMT', 'Q1_TOTAL_CR_AMT')]:
+            if q1_col in df_sb.columns:
+                df_sb[col] = df_sb[q1_col].fillna(df_sb.get(col, 0))
+        print("Transaction merge completed.")
+    else:
+        print("No transaction data to merge.")
 
-    # Update transaction columns
-    for col in ['DR_NO', 'CR_NO', 'DR_AMT', 'CR_AMT']:
-        if f'{col}_txn' in df_sb.columns:
-            df_sb[col] = df_sb[f'{col}_txn'].fillna(df_sb[col] if col in df_sb.columns else 0)
-            df_sb = df_sb.drop(columns=[f'{col}_txn'])
+    print(f"Main dataset ready: {len(df_sb)} records")
 
-print(f"Main dataset loaded: {len(df_sb)} records")
+except Exception as e:
+    print(f"Warning: Could not load main dataset: {e}")
+    df_sb = pd.DataFrame(columns=['CUST_NBR', 'ACCT_NBR'])
 
-# --- Step 3: Load Customer Info Dataset (UPDATED) ---
+# --- Step 3: Load Customer Info ---
 print("Step 3: Loading customer info...")
 
-customer_info = pd.read_csv('customer_info.csv')
+try:
+    customer_info = pd.read_csv('customer_info.csv')
+    
+    if 'CUST_AGE' in customer_info.columns:
+        customer_info['CUST_AGE'] = pd.to_numeric(customer_info['CUST_AGE'], errors='coerce').clip(lower=0, upper=100)
+    if 'MRTL_STS' in customer_info.columns:
+        customer_info['MRTL_STS'] = customer_info['MRTL_STS'].fillna('U')
+    if 'PANFLAG' in customer_info.columns:
+        customer_info['PANFLAG'] = customer_info['PANFLAG'].apply(lambda x: 1 if pd.notna(x) and x == 8.0 else 0)
+    if 'MOBILE_NBR' in customer_info.columns:
+        customer_info['MOBILE_NBR'] = customer_info['MOBILE_NBR'].apply(lambda x: 1 if pd.notna(x) and x == 8.0 else 0)
+    
+    print(f"Customer info loaded: {len(customer_info)} customers")
 
-# Clean customer data with more robust logic
-if 'CUST_AGE' in customer_info.columns:
-    customer_info['CUST_AGE'] = pd.to_numeric(customer_info['CUST_AGE'], errors='coerce')
-    # Cap age at reasonable limits (remove obviously wrong ages like 125)
-    customer_info['CUST_AGE'] = customer_info['CUST_AGE'].clip(lower=18, upper=100)
-
-if 'MRTL_STS' in customer_info.columns:
-    customer_info['MRTL_STS'] = customer_info['MRTL_STS'].fillna('U')  # Fill missing marital status with 'U'
-
-# Handle PANFLAG and MOBILE_NBR (convert 8.0 to 1 for presence, others to 0)
-if 'PANFLAG' in customer_info.columns:
-    customer_info['PANFLAG'] = customer_info['PANFLAG'].apply(lambda x: 1 if pd.notna(x) and x == 8.0 else 0)
-
-if 'MOBILE_NBR' in customer_info.columns:
-    customer_info['MOBILE_NBR'] = customer_info['MOBILE_NBR'].apply(lambda x: 1 if pd.notna(x) and x == 8.0 else 0)
-
-# Clean CUST_CRTN (customer creation/vintage)
-if 'CUST_CRTN' in customer_info.columns:
-    customer_info['CUST_CRTN'] = pd.to_numeric(customer_info['CUST_CRTN'], errors='coerce')
-    # Assuming CUST_CRTN represents days since customer creation or similar vintage measure
-    customer_info['CUST_CRTN'] = customer_info['CUST_CRTN'].clip(lower=0, upper=10000)  # reasonable range
-
-# Clean HOME_BRCH_NBR
-if 'HOME_BRCH_NBR' in customer_info.columns:
-    customer_info['HOME_BRCH_NBR'] = customer_info['HOME_BRCH_NBR'].fillna('Unknown')
-
-print(f"Customer info loaded: {len(customer_info)} customers")
-print(f"Customer info columns: {list(customer_info.columns)}")
-
-# Print basic statistics
-print("\nCustomer Info Statistics:")
-if 'CUST_AGE' in customer_info.columns:
-    print(f"Age range: {customer_info['CUST_AGE'].min():.0f} - {customer_info['CUST_AGE'].max():.0f}")
-if 'PANFLAG' in customer_info.columns:
-    print(f"PAN holders: {customer_info['PANFLAG'].sum():,} ({customer_info['PANFLAG'].mean()*100:.1f}%)")
-if 'MOBILE_NBR' in customer_info.columns:
-    print(f"Mobile number holders: {customer_info['MOBILE_NBR'].sum():,} ({customer_info['MOBILE_NBR'].mean()*100:.1f}%)")
-
+except Exception as e:
+    print(f"Warning: Could not load customer info: {e}")
+    customer_info = None
 
 # --- Step 4: Account-Level Feature Engineering ---
 print("Step 4: Computing engagement scores...")
@@ -154,30 +190,20 @@ digital_features = [f for f in ['ATM', 'MBS', 'YONO', 'UPI', 'INB'] if f in df_s
 transaction_features = [f for f in ['DR_AMT', 'CR_AMT'] if f in df_sb.columns]
 product_features = [f for f in ['FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN'] if f in df_sb.columns]
 
-# Compute weights for scores (with error handling)
+# Compute weights
 def compute_weights(df, features, base_weights, group_col='CUST_CLASS'):
-    try:
-        if not features or group_col not in df.columns:
-            return {}
+    if not features or group_col not in df.columns:
+        return {'DEFAULT': {f: base_weights.get(f, 1) for f in features}}
+    
+    overall_usage = df[features].mean(numeric_only=True)
+    tier_usage = df.groupby(group_col)[features].mean(numeric_only=True)
+    
+    weights = {'DEFAULT': {f: base_weights.get(f, 1) for f in features}}
+    for tier in tier_usage.index:
+        weights[tier] = {f: base_weights.get(f, 1) * (tier_usage.loc[tier, f] / (overall_usage[f] + 0.01)) 
+                         for f in features if f in tier_usage.columns}
+    return weights
 
-        overall_usage = df[features].mean()
-        tier_usage = df.groupby(group_col)[features].mean()
-
-        weights = {}
-        for tier in tier_usage.index:
-            weights[tier] = {}
-            for feature in features:
-                base_weight = base_weights.get(feature, 1)
-                tier_rate = tier_usage.loc[tier, feature]
-                overall_rate = overall_usage[feature]
-                weights[tier][feature] = base_weight * (tier_rate / (overall_rate + 0.01))
-
-        return weights
-    except Exception as e:
-        print(f"Warning in weight computation: {e}")
-        return {}
-
-# Base weights
 base_weights_digital = {'INB': 5, 'YONO': 4, 'MBS': 3, 'UPI': 2, 'ATM': 1}
 base_weights_transaction = {'DR_AMT': 1, 'CR_AMT': 1}
 base_weights_product = {'FD': 3, 'RD': 2, 'PERSONAL_LOAN': 4, 'HOME_LOAN': 5}
@@ -189,430 +215,217 @@ weights_product = compute_weights(df_sb, product_features, base_weights_product)
 # Compute scores
 def compute_digital_engagement(row):
     tier = row.get('CUST_CLASS', 'DEFAULT')
-    if tier not in weights_digital:
-        tier = 'DEFAULT'
-    if tier not in weights_digital:
-        return sum(row.get(feature, 0) for feature in digital_features if feature in row.index)
-    return sum(weights_digital[tier].get(feature, 1) * row.get(feature, 0) for feature in digital_features if feature in row.index)
+    return sum(weights_digital.get(tier, weights_digital['DEFAULT']).get(f, 1) * row.get(f, 0) 
+               for f in digital_features)
 
 def compute_transaction_score(row):
     tier = row.get('CUST_CLASS', 'DEFAULT')
-    if tier not in weights_transaction:
-        return row.get('DR_AMT', 0) + row.get('CR_AMT', 0)
-    return sum(weights_transaction[tier].get(feature, 1) * row.get(feature, 0) for feature in transaction_features if feature in row.index)
+    return sum(weights_transaction.get(tier, weights_transaction['DEFAULT']).get(f, 1) * row.get(f, 0) 
+               for f in transaction_features)
 
 def compute_product_score(row):
     tier = row.get('CUST_CLASS', 'DEFAULT')
-    if tier not in weights_product:
-        return sum(row.get(feature, 0) for feature in product_features if feature in row.index)
-    return sum(weights_product[tier].get(feature, 1) * row.get(feature, 0) for feature in product_features if feature in row.index)
+    return sum(weights_product.get(tier, weights_product['DEFAULT']).get(f, 1) * row.get(f, 0) 
+               for f in product_features)
 
 df_sb['DIGITAL_ENGAGE'] = df_sb.apply(compute_digital_engagement, axis=1)
-df_sb['transaction_score'] = df_sb.apply(compute_transaction_score, axis=1)
-df_sb['product_score'] = df_sb.apply(compute_product_score, axis=1)
+df_sb['TRANSACTION_SCORE'] = df_sb.apply(compute_transaction_score, axis=1)
+df_sb['PRODUCT_SCORE'] = df_sb.apply(compute_product_score, axis=1)
 
 # --- Step 5: Customer-Level Aggregation ---
 print("Step 5: Aggregating to customer level...")
 
-# Define aggregation dictionary with safe operations
-customer_agg_dict = {}
+# Define service columns early for use in aggregation
+service_cols = [col for col in ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY'] 
+                if col in df_sb.columns]
 
-# Basic fields
-basic_fields = {
-    'CUST_CLASS': 'first',
-    'CUST_CAT': lambda x: x.mode().iloc[0] if not x.mode().empty else x.iloc[0],
+# Define aggregation dictionary
+customer_agg_dict = {
+    'CUST_CLASS': lambda x: x.mode().iloc[0] if not x.mode().empty else 'Unknown',
+    'CUST_CAT': lambda x: x.mode().iloc[0] if not x.mode().empty else 'Unknown',
+    'JNT_ACCT_FLAG': lambda x: x.mode().iloc[0] if not x.mode().empty else 'N',
+    **{f: 'max' for f in ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI', 
+                          'SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 
+                          'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN', 
+                          'SBI_MF', 'SBI_CAP', 'SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 
+                          'APY', 'NPS', 'PMJJY', 'PMSBY', 'ATM', 'MBS', 'YONO', 
+                          'UPI', 'INB', 'LOCKER'] if f in df_sb.columns},
+    **{f: 'sum' for f in ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD', 
+                          'AQB', 'TDV', 'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO', 
+                          'HOME_LOAN_AMT', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE', 
+                          'PRODUCT_SCORE'] if f in df_sb.columns},
+    **{f: agg for f, agg in {
+        'ACCT_OPN_DT': 'min', 
+        'REPORT_DT': 'max', 
+        'LST_CUST_CR_DT': 'max', 
+        'LST_CUST_DR_DT': 'max',
+        'TENURE_DAYS': 'max'
+    }.items() if f in df_sb.columns}
 }
-
-# Numeric fields - max
-max_fields = ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI']
-for field in max_fields:
-    if field in df_sb.columns:
-        customer_agg_dict[field] = 'max'
-
-# Balance fields - sum
-balance_fields = ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD', 'AQB', 'TDV']
-for field in balance_fields:
-    if field in df_sb.columns:
-        customer_agg_dict[field] = 'sum'
-
-# Transaction fields - sum
-transaction_fields = ['DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO']
-for field in transaction_fields:
-    if field in df_sb.columns:
-        customer_agg_dict[field] = 'sum'
-
-# Product fields - max
-product_fields = ['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN',
-                 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN', 'SBI_MF', 'SBI_CAP', 'SBI_CARD',
-                 'SBI_LFE', 'SBI_GNRL', 'APY', 'NPS', 'PMJJY', 'PMSBY']
-for field in product_fields:
-    if field in df_sb.columns:
-        customer_agg_dict[field] = 'max'
-
-# Special fields
-if 'HOME_LOAN_AMT' in df_sb.columns:
-    customer_agg_dict['HOME_LOAN_AMT'] = 'sum'
-
-# Digital fields - max
-digital_fields = ['ATM', 'MBS', 'YONO', 'UPI', 'INB', 'LOCKER']
-for field in digital_fields:
-    if field in df_sb.columns:
-        customer_agg_dict[field] = 'max'
-
-# Special handling for categorical fields
-if 'JNT_ACCT_FLAG' in df_sb.columns:
-    customer_agg_dict['JNT_ACCT_FLAG'] = lambda x: x.mode().iloc[0] if not x.mode().empty else 'N'
-
-# Date fields
-date_fields = {
-    'ACCT_OPN_DT': 'min',
-    'REPORT_DT': 'max',
-    'LST_CUST_CR_DT': 'max',
-    'LST_CUST_DR_DT': 'max'
-}
-for field, agg_func in date_fields.items():
-    if field in df_sb.columns:
-        customer_agg_dict[field] = agg_func
-
-# Computed fields
-computed_fields = ['TENURE_DAYS', 'DIGITAL_ENGAGE', 'transaction_score', 'product_score']
-for field in computed_fields:
-    if field in df_sb.columns:
-        customer_agg_dict[field] = 'sum' if field != 'TENURE_DAYS' else 'max'
-
-# Add basic fields to aggregation dict
-customer_agg_dict.update(basic_fields)
 
 # Perform aggregation
-df_customer = df_sb.groupby('CUST_NBR').agg(customer_agg_dict).reset_index()
+try:
+    df_customer = df_sb.groupby('CUST_NBR').agg(customer_agg_dict).reset_index()
+    print(f"Customer aggregation complete: {len(df_customer)} customers")
+except Exception as e:
+    print(f"Error in customer aggregation: {e}")
+    df_customer = pd.DataFrame(columns=['CUST_NBR'])
 
-print(f"Customer aggregation complete: {len(df_customer)} customers")
-
-# --- Step 6: Merge with Customer Info (UPDATED) ---
+# --- Step 6: Merge with Customer Info ---
 print("Step 6: Merging with customer info...")
 
 if customer_info is not None:
-    # Check overlap between datasets
-    main_customers = set(df_customer['CUST_NBR'])
-    info_customers = set(customer_info['CUST_NBR'])
-    overlap = len(main_customers.intersection(info_customers))
-
-    print(f"Customers in main dataset: {len(main_customers):,}")
-    print(f"Customers in info dataset: {len(info_customers):,}")
-    print(f"Overlapping customers: {overlap:,} ({overlap/len(main_customers)*100:.1f}%)")
-
-    # Merge with customer info
-    merge_cols = ['CUST_NBR']
-    optional_cols = ['CUST_CRTN', 'HOME_BRCH_NBR', 'PANFLAG', 'CUST_AGE', 'MRTL_STS', 'MOBILE_NBR']
-    merge_cols.extend([col for col in optional_cols if col in customer_info.columns])
-
-    df_customer = df_customer.merge(customer_info[merge_cols], on='CUST_NBR', how='left')
-    print(f"Customer info merged successfully")
-
-    # Check merge results
-    for col in optional_cols:
-        if col in df_customer.columns:
-            null_count = df_customer[col].isnull().sum()
-            print(f"  {col}: {null_count:,} missing values ({null_count/len(df_customer)*100:.1f}%)")
+    merge_cols = ['CUST_NBR'] + [col for col in ['CUST_CRTN', 'HOME_BRCH_NBR', 'PANFLAG', 
+                                                 'CUST_AGE', 'MRTL_STS', 'MOBILE_NBR'] 
+                                 if col in customer_info.columns]
+    df_customer = df_customer.merge(customer_info[merge_cols], on='CUST_NBR', how='left', 
+                                   suffixes=('', '_cust'))
+    print("Customer info merged successfully")
 else:
     print("No customer info to merge")
 
 # --- Step 7: Post-Aggregation Feature Engineering ---
 print("Step 7: Creating derived features...")
 
-# Define service columns (FIXED: was undefined in original code)
-service_cols = ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY']
-service_cols = [col for col in service_cols if col in df_customer.columns]
+# Basic counts
+df_customer['TXN_FREQ'] = df_customer.get('DR_NO', 0) + df_customer.get('CR_NO', 0)
+df_customer['JNT_ACCT_FLG_NUM'] = df_customer['JNT_ACCT_FLAG'].map({'Y': 2, 'N': 1}).fillna(1) \
+    if 'JNT_ACCT_FLAG' in df_customer.columns else 1
 
-# Basic Counts
-df_customer['TXN_FREQ'] = (df_customer.get('DR_NO', 0) + df_customer.get('CR_NO', 0))
+# Product counts
+product_cols = [col for col in ['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 
+                               'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN', 
+                               'SBI_MF', 'SBI_CAP', 'SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 
+                               'APY', 'NPS', 'PMJJY', 'PMSBY'] if col in df_customer.columns]
+df_customer['TOTAL_PRODUCT'] = df_customer[product_cols].eq(1).sum(axis=1) if product_cols else 0
+df_customer['TOTAL_PRODUCT_EXCL_SERVICES'] = (df_customer['TOTAL_PRODUCT'] - 
+                                             df_customer[service_cols].eq(1).sum(axis=1)) \
+    if service_cols else df_customer['TOTAL_PRODUCT']
 
-if 'JNT_ACCT_FLAG' in df_customer.columns:
-    df_customer['JNT_ACCT_FLG_NUM'] = df_customer['JNT_ACCT_FLAG'].map({'Y': 2, 'N': 1}).fillna(1)
-else:
-    df_customer['JNT_ACCT_FLG_NUM'] = 1
-
-# Product Counts
-product_cols = [col for col in product_fields if col in df_customer.columns]
-if product_cols:
-    df_customer['TOTAL_PRODUCT'] = df_customer[product_cols].eq(1).sum(axis=1)
-
-    # FIXED: service_cols now properly defined
-    if service_cols:
-        df_customer['TOTAL_PRODUCT_EXCL_SERVICES'] = df_customer['TOTAL_PRODUCT'] - df_customer[service_cols].eq(1).sum(axis=1)
-    else:
-        df_customer['TOTAL_PRODUCT_EXCL_SERVICES'] = df_customer['TOTAL_PRODUCT']
-else:
-    df_customer['TOTAL_PRODUCT'] = 0
-    df_customer['TOTAL_PRODUCT_EXCL_SERVICES'] = 0
-
-# Behavioral Features
+# Behavioral features
 df_customer['TXN_VELOCITY'] = df_customer['TXN_FREQ'] / OBSERVATION_PERIOD_DAYS
 df_customer['MTH_TXN_RATE'] = df_customer['TXN_FREQ'] / 3
-df_customer['AVG_TXN_AMT'] = (df_customer.get('DR_AMT', 0) + df_customer.get('CR_AMT', 0)) / (df_customer['TXN_FREQ'] + 1e-6)
+df_customer['AVG_TXN_AMT'] = (df_customer.get('DR_AMT', 0) + df_customer.get('CR_AMT', 0)) / \
+                             (df_customer['TXN_FREQ'] + 1e-6)
 
-# Balance ratios with safe division
-if 'AVG_BAL_QTD' in df_customer.columns and 'END_OF_DAY_BAL' in df_customer.columns:
-    df_customer['BAL_STAB'] = df_customer['AVG_BAL_QTD'] / (df_customer['END_OF_DAY_BAL'] + 1e-6)
-    df_customer['BAL_GTH_IND'] = df_customer['END_OF_DAY_BAL'] / (df_customer['AVG_BAL_QTD'] + 1e-6)
+# Balance ratios
+df_customer['BAL_STAB'] = df_customer['AVG_BAL_QTD'] / (df_customer.get('END_OF_DAY_BAL', 0) + 1e-6) \
+    if 'AVG_BAL_QTD' in df_customer.columns else 0
+df_customer['BAL_GTH_IND'] = df_customer.get('END_OF_DAY_BAL', 0) / (df_customer.get('AVG_BAL_QTD', 0) + 1e-6) \
+    if 'AVG_BAL_QTD' in df_customer.columns else 0
+df_customer['MTH_BAL_TREND'] = df_customer['AVG_BAL_MTD'] / (df_customer.get('AVG_BAL_QTD', 0) + 1e-6) \
+    if 'AVG_BAL_MTD' in df_customer.columns and 'AVG_BAL_QTD' in df_customer.columns else 0
 
-if 'AVG_BAL_MTD' in df_customer.columns and 'AVG_BAL_QTD' in df_customer.columns:
-    df_customer['MTH_BAL_TREND'] = df_customer['AVG_BAL_MTD'] / (df_customer['AVG_BAL_QTD'] + 1e-6)
-
-# Investment, Loan, and Service Features
+# Investment, loan, and service features
 investment_products = [col for col in ['FD', 'RD', 'SBI_MF', 'SBI_CAP', 'NPS'] if col in df_customer.columns]
-if investment_products:
-    df_customer['INVEST_ORIENT'] = df_customer[investment_products].sum(axis=1)
-    df_customer['INVEST_DIVERSITY'] = df_customer[investment_products].gt(0).sum(axis=1)
-else:
-    df_customer['INVEST_ORIENT'] = 0
-    df_customer['INVEST_DIVERSITY'] = 0
+df_customer['INVEST_ORIENT'] = df_customer[investment_products].sum(axis=1) if investment_products else 0
+df_customer['INVEST_DIVERSITY'] = df_customer[investment_products].gt(0).sum(axis=1) if investment_products else 0
 
-loan_products = [col for col in ['PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN', 'EDUCATION_LOAN'] if col in df_customer.columns]
-if loan_products:
-    df_customer['LOAN_SOPHISTICATION'] = df_customer[loan_products].sum(axis=1)
-    secured_loans = [col for col in ['HOME_LOAN', 'CAR_LOAN'] if col in df_customer.columns]
-    if secured_loans:
-        df_customer['SEC_LOAN_PREF'] = df_customer[secured_loans].sum(axis=1) / (df_customer['LOAN_SOPHISTICATION'] + 1e-6)
-    else:
-        df_customer['SEC_LOAN_PREF'] = 0
-else:
-    df_customer['LOAN_SOPHISTICATION'] = 0
-    df_customer['SEC_LOAN_PREF'] = 0
+loan_products = [col for col in ['PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN', 'EDUCATION_LOAN'] 
+                 if col in df_customer.columns]
+df_customer['LOAN_SOPHISTICATION'] = df_customer[loan_products].sum(axis=1) if loan_products else 0
+secured_loans = [col for col in ['HOME_LOAN', 'CAR_LOAN'] if col in df_customer.columns]
+df_customer['SEC_LOAN_PREF'] = df_customer[secured_loans].sum(axis=1) / \
+                              (df_customer['LOAN_SOPHISTICATION'] + 1e-6) if secured_loans else 0
 
-if service_cols:
-    df_customer['SERV_ADOPT'] = df_customer[service_cols].sum(axis=1)
-else:
-    df_customer['SERV_ADOPT'] = 0
+df_customer['SERV_ADOPT'] = df_customer[service_cols].sum(axis=1) if service_cols else 0
 
-# Premium Banking Indicator
+# Premium banking indicator
 if 'CUST_CLASS' in df_customer.columns and 'AVG_BAL_QTD' in df_customer.columns:
-    premium_classes = ['RHODIUM', 'PLATINUM', 'DIAMOND']  # Fixed typo: ROHDIUM -> RHODIUM
-    bal_threshold = df_customer['AVG_BAL_QTD'].quantile(0.8)
-    df_customer['PREM_BANK'] = ((df_customer['CUST_CLASS'].isin(premium_classes)) &
-                                (df_customer['AVG_BAL_QTD'] > bal_threshold)).astype(int)
+    premium_classes = ['RHODIUM', 'PLATINUM', 'DIAMOND']
+    bal_threshold = df_customer['AVG_BAL_QTD'].quantile(0.8, interpolation='nearest')
+    df_customer['PREM_BANK'] = ((df_customer['CUST_CLASS'].isin(premium_classes)) & 
+                               (df_customer['AVG_BAL_QTD'] > bal_threshold)).astype(int)
 else:
     df_customer['PREM_BANK'] = 0
 
-# Channel Sophistication
+# Channel sophistication
 channel_weights = {'YONO': 3, 'INB': 2, 'UPI': 1.5, 'MBS': 1, 'ATM': 0.5}
-df_customer['CHNNL_SOPHISTICATION'] = 0
-for channel, weight in channel_weights.items():
-    if channel in df_customer.columns:
-        df_customer['CHNNL_SOPHISTICATION'] += df_customer[channel] * weight
-
-# Cross-Sell Success
-if 'TENURE_DAYS' in df_customer.columns:
-    df_customer['CROSS_SELL_SUCCESS'] = df_customer['TOTAL_PRODUCT'] / ((df_customer['TENURE_DAYS'] / 365) + 1e-6)
-else:
-    df_customer['CROSS_SELL_SUCCESS'] = 0
-
-# Relationship Depth
-df_customer['RELATION_DEPTH'] = (df_customer['INVEST_ORIENT'] + df_customer['LOAN_SOPHISTICATION'] +
+df_customer['CHNNL_SOPHISTICATION'] = sum(df_customer.get(c, 0) * w for c, w in channel_weights.items() 
+                                         if c in df_customer.columns)
+df_customer['CROSS_SELL_SUCCESS'] = df_customer['TOTAL_PRODUCT'] / \
+                                   ((df_customer.get('TENURE_DAYS', 0) / 365) + 1e-6)
+df_customer['RELATION_DEPTH'] = (df_customer['INVEST_ORIENT'] + df_customer['LOAN_SOPHISTICATION'] + 
                                 df_customer['SERV_ADOPT'] + df_customer.get('DIGITAL_ENGAGE', 0))
 
-# Additional Features with safe operations
-df_customer['AVG_DR_AMT'] = df_customer.get('DR_AMT', 0) / (df_customer.get('DR_NO', 0).replace(0, 1))
-df_customer['AVG_CR_AMT'] = df_customer.get('CR_AMT', 0) / (df_customer.get('CR_NO', 0).replace(0, 1))
+# Additional features
+df_customer['AVG_DR_AMT'] = df_customer.get('DR_AMT', 0) / (df_customer.get('DR_NO', 0) + 1e-6)
+df_customer['AVG_CR_AMT'] = df_customer.get('CR_AMT', 0) / (df_customer.get('CR_NO', 0) + 1e-6)
 
 # Days since last transaction
-if 'LST_CUST_CR_DT' in df_customer.columns:
-    df_customer['DAYS_SINCE_LAST_CR'] = (reference_date - df_customer['LST_CUST_CR_DT']).dt.days
-else:
-    df_customer['DAYS_SINCE_LAST_CR'] = np.nan
-
-if 'LST_CUST_DR_DT' in df_customer.columns:
-    df_customer['DAYS_SINCE_LAST_DR'] = (reference_date - df_customer['LST_CUST_DR_DT']).dt.days
-else:
-    df_customer['DAYS_SINCE_LAST_DR'] = np.nan
-
-# Calculate days since last transaction
-date_cols = ['DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR']
-existing_date_cols = [col for col in date_cols if col in df_customer.columns]
-if existing_date_cols:
-    df_customer['DAY_SINCE_LST_TXN'] = df_customer[existing_date_cols].min(axis=1, skipna=True)
-else:
-    df_customer['DAY_SINCE_LST_TXN'] = np.nan
+df_customer['DAYS_SINCE_LAST_CR'] = (reference_date - df_customer['LST_CUST_CR_DT']).dt.days \
+    if 'LST_CUST_CR_DT' in df_customer.columns else np.nan
+df_customer['DAYS_SINCE_LAST_DR'] = (reference_date - df_customer['LST_CUST_DR_DT']).dt.days \
+    if 'LST_CUST_DR_DT' in df_customer.columns else np.nan
+df_customer['DAY_SINCE_LST_TXN'] = df_customer[['DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR']].min(axis=1, skipna=True) \
+    if {'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'}.intersection(df_customer.columns) else np.nan
 
 # Financial ratios
-df_customer['NET_FLOW_AMT'] = df_customer.get('CR_AMT', 0) - df_customer.get('DR_AMT', 0)
 total_flow = df_customer.get('CR_AMT', 0) + df_customer.get('DR_AMT', 0)
+df_customer['NET_FLOW_AMT'] = df_customer.get('CR_AMT', 0) - df_customer.get('DR_AMT', 0)
 df_customer['NET_FLOW_RATIO'] = df_customer['NET_FLOW_AMT'] / (total_flow + 1e-6)
-
-if 'AVG_BAL_QTD' in df_customer.columns:
-    df_customer['BAL_UTIL'] = total_flow / (df_customer['AVG_BAL_QTD'] + 1e-6)
-    df_customer['MTH_BAL_UTIL'] = df_customer['BAL_UTIL'] / 3
-else:
-    df_customer['BAL_UTIL'] = 0
-    df_customer['MTH_BAL_UTIL'] = 0
+df_customer['BAL_UTIL'] = total_flow / (df_customer.get('AVG_BAL_QTD', 0) + 1e-6) \
+    if 'AVG_BAL_QTD' in df_customer.columns else 0
+df_customer['MTH_BAL_UTIL'] = df_customer['BAL_UTIL'] / 3
 
 # Product diversity
-core_products = ['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 'SBI_MF', 'UPI', 'INB']
-existing_core_products = [col for col in core_products if col in df_customer.columns]
-if existing_core_products:
-    df_customer['PROD_DIVERSITY'] = df_customer[existing_core_products].gt(0).sum(axis=1) / len(existing_core_products)
-else:
-    df_customer['PROD_DIVERSITY'] = 0
+core_products = [col for col in ['SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN', 'SBI_MF', 'UPI', 'INB'] 
+                 if col in df_customer.columns]
+df_customer['PROD_DIVERSITY'] = df_customer[core_products].gt(0).sum(axis=1) / len(core_products) \
+    if core_products else 0
 
 # Ratios
 loan_cols = [col for col in ['PERSONAL_LOAN', 'HOME_LOAN'] if col in df_customer.columns]
 invest_cols = [col for col in ['FD', 'RD', 'SBI_MF'] if col in df_customer.columns]
-if loan_cols and invest_cols:
-    df_customer['LOAN_TO_INVEST'] = df_customer[loan_cols].sum(axis=1) / (df_customer[invest_cols].sum(axis=1) + 1e-6)
-else:
-    df_customer['LOAN_TO_INVEST'] = 0
+df_customer['LOAN_TO_INVEST'] = df_customer[loan_cols].sum(axis=1) / (df_customer[invest_cols].sum(axis=1) + 1e-6) \
+    if loan_cols and invest_cols else 0
 
 digital_cols = [col for col in ['MBS', 'YONO', 'UPI', 'INB'] if col in df_customer.columns]
 physical_cols = [col for col in ['ATM', 'LOCKER'] if col in df_customer.columns]
-if digital_cols and physical_cols:
-    df_customer['DIGI_TO_PHYS'] = df_customer[digital_cols].sum(axis=1) / (df_customer[physical_cols].sum(axis=1) + 1e-6)
-else:
-    df_customer['DIGI_TO_PHYS'] = 0
+df_customer['DIGI_TO_PHYS'] = df_customer[digital_cols].sum(axis=1) / (df_customer[physical_cols].sum(axis=1) + 1e-6) \
+    if digital_cols and physical_cols else 0
 
-# Joint account adjustment
 df_customer['JNT_ACCT_DR_AMT'] = df_customer.get('DR_AMT', 0) / df_customer['JNT_ACCT_FLG_NUM']
-
-# Risk indicators
 df_customer['DORM_RISK'] = (df_customer['DAY_SINCE_LST_TXN'] > 30).astype(int)
 df_customer['SEV_DORM_RISK'] = (df_customer['DAY_SINCE_LST_TXN'] > 60).astype(int)
-
-# Intensity measures
 df_customer['TXN_INTENSITY'] = df_customer['TXN_FREQ'] / OBSERVATION_PERIOD_DAYS
 df_customer['VAL_INTENSITY'] = total_flow / OBSERVATION_PERIOD_DAYS
-
-# Interaction terms
-if 'TENURE_DAYS' in df_customer.columns:
-    df_customer['TENURE_TXN_INTERACT'] = df_customer['TENURE_DAYS'] * df_customer['TXN_INTENSITY']
-else:
-    df_customer['TENURE_TXN_INTERACT'] = 0
-
-if 'AVG_BAL_QTD' in df_customer.columns:
-    df_customer['PROD_BAL_INTERACT'] = df_customer['TOTAL_PRODUCT'] * df_customer['AVG_BAL_QTD']
-else:
-    df_customer['PROD_BAL_INTERACT'] = 0
-
-# Ratios with safe division
+df_customer['TENURE_TXN_INTERACT'] = df_customer.get('TENURE_DAYS', 0) * df_customer['TXN_INTENSITY']
+df_customer['PROD_BAL_INTERACT'] = df_customer['TOTAL_PRODUCT'] * df_customer.get('AVG_BAL_QTD', 0)
 df_customer['CR_TO_DR_RATIO'] = df_customer.get('CR_AMT', 0) / (df_customer.get('DR_AMT', 0) + 1e-6)
 df_customer['TXN_CNT_RATIO'] = df_customer.get('CR_NO', 0) / (df_customer.get('DR_NO', 0) + 1e-6)
+df_customer['ACT_LVL'] = pd.cut(df_customer['TXN_FREQ'], bins=[-np.inf, 5, 20, 50, np.inf], 
+                                labels=['Low', 'Medium', 'High', 'Very_High'], include_lowest=True)
 
-# Activity level categorization
-df_customer['ACT_LVL'] = pd.cut(df_customer['TXN_FREQ'],
-                               bins=[-np.inf, 5, 20, 50, np.inf],
-                               labels=['Low', 'Medium', 'High', 'Very_High'])
-
-# --- Step 7.5: Handle Missing Values More.... ---
-
-# Age-based features
-if 'CUST_AGE' in df_customer.columns:
-    df_customer['AGE_GROUP'] = pd.cut(df_customer['CUST_AGE'],
-                                     bins=[0, 25, 35, 45, 55, 65, 100],
-                                     labels=['Young', 'Young_Adult', 'Middle_Aged', 'Mature', 'Senior', 'Elderly'])
-
-    # Age-tenure interaction
-    if 'TENURE_DAYS' in df_customer.columns:
-        df_customer['AGE_TENURE_RATIO'] = df_customer['CUST_AGE'] / ((df_customer['TENURE_DAYS'] / 365) + 1e-6)
-
-# Customer vintage features
-if 'CUST_CRTN' in df_customer.columns:
-    df_customer['CUST_VINTAGE_YEARS'] = df_customer['CUST_CRTN'] / 365  # Convert to years if in days
-    df_customer['VINTAGE_GROUP'] = pd.cut(df_customer['CUST_VINTAGE_YEARS'],
-                                         bins=[-np.inf, 1, 3, 5, 10, np.inf],
-                                         labels=['New', 'Established', 'Mature', 'Loyal', 'Legacy'])
-
-# Digital adoption score
-digital_indicators = []
-if 'PANFLAG' in df_customer.columns:
-    digital_indicators.append('PANFLAG')
-if 'MOBILE_NBR' in df_customer.columns:
-    digital_indicators.append('MOBILE_NBR')
-
-if digital_indicators:
-    df_customer['BASIC_DIGITAL_SCORE'] = df_customer[digital_indicators].sum(axis=1)
-
-    # Enhanced digital engagement combining channels and basic info
-    if 'DIGITAL_ENGAGE' in df_customer.columns:
-        df_customer['TOTAL_DIGITAL_SCORE'] = df_customer['DIGITAL_ENGAGE'] + df_customer['BASIC_DIGITAL_SCORE']
-
-# Life stage indicators
-if 'CUST_AGE' in df_customer.columns and 'MRTL_STS' in df_customer.columns:
-    def get_life_stage(row):
-        age = row['CUST_AGE']
-        marital = row['MRTL_STS']
-
-        if age < 30:
-            return 'Young_Single' if marital in ['S', 'U'] else 'Young_Married'
-        elif age < 45:
-            return 'Adult_Single' if marital in ['S', 'U'] else 'Adult_Married'
-        elif age < 60:
-            return 'Mature_Single' if marital in ['S', 'U'] else 'Mature_Married'
-        else:
-            return 'Senior_Single' if marital in ['S', 'U'] else 'Senior_Married'
-
-    df_customer['LIFE_STAGE'] = df_customer.apply(get_life_stage, axis=1)
-
-print("Customer info features created successfully")
-
-# --- Step 8: Handle Missing Values (UPDATED SECTION) ---
+# --- Step 8: Handle Missing Values ---
 print("Step 8: Handling missing values...")
 
-# Fill missing values with appropriate defaults
 numeric_columns = df_customer.select_dtypes(include=[np.number]).columns
-
 for col in numeric_columns:
-    if col in ['TENURE_DAYS']:
-        df_customer[col] = df_customer[col].fillna(df_customer[col].median())
-    elif col in ['CUST_CRTN']:
-        # For customer vintage, use median or a reasonable default
-        df_customer[col] = df_customer[col].fillna(df_customer[col].median())
-    elif col in ['CUST_AGE']:
-        # For age, use median of existing ages
-        df_customer[col] = df_customer[col].fillna(df_customer[col].median())
-    elif col in ['PANFLAG', 'MOBILE_NBR']:
-        # For binary flags, missing means 0 (not present)
-        df_customer[col] = df_customer[col].fillna(0)
-    elif col in ['CROSS_SELL_SUCCESS']:
-        df_customer[col] = df_customer[col].fillna(0)
-    elif 'DAYS_SINCE_LAST' in col:
-        df_customer[col] = df_customer[col].fillna(df_customer[col].max())
-
-# Handle categorical columns
-if 'HOME_BRCH_NBR' in df_customer.columns:
-    df_customer['HOME_BRCH_NBR'] = df_customer['HOME_BRCH_NBR'].fillna('Unknown')
-
-if 'MRTL_STS' in df_customer.columns:
-    df_customer['MRTL_STS'] = df_customer['MRTL_STS'].fillna('U')
-
-# Fill remaining numeric columns with 0
-for col in numeric_columns:
-    if col in df_customer.columns:
+    if col in ['TENURE_DAYS', 'CUST_CRTN', 'CUST_AGE']:
+        df_customer[col] = df_customer[col].fillna(df_customer[col].median() if not df_customer[col].isna().all() else 0)
+    elif col in ['DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR']:
+        df_customer[col] = df_customer[col].fillna(df_customer[col].max() if not df_customer[col].isna().all() else OBSERVATION_PERIOD_DAYS)
+    else:
         df_customer[col] = df_customer[col].fillna(0)
 
-# Recalculate DAY_SINCE_LST_TXN after filling missing values
-existing_date_cols = [col for col in ['DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'] if col in df_customer.columns]
-if existing_date_cols:
-    df_customer['DAY_SINCE_LST_TXN'] = df_customer[existing_date_cols].min(axis=1, skipna=True)
+categorical_columns = df_customer.select_dtypes(include=['object', 'category']).columns
+for col in categorical_columns:
+    if col in ['HOME_BRCH_NBR', 'MRTL_STS', 'CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLAG']:
+        df_customer[col] = df_customer[col].fillna('Unknown')
 
 # --- Step 9: Data Quality Checks ---
 print("Step 9: Performing data quality checks...")
 
-# Check for infinite values
-inf_cols = []
 for col in df_customer.select_dtypes(include=[np.number]).columns:
     if np.isinf(df_customer[col]).any():
-        inf_cols.append(col)
         df_customer[col] = df_customer[col].replace([np.inf, -np.inf], np.nan)
-        df_customer[col] = df_customer[col].fillna(df_customer[col].median())
+        df_customer[col] = df_customer[col].fillna(df_customer[col].median() if not df_customer[col].isna().all() else 0)
+        print(f"Fixed infinite values in {col}")
 
-if inf_cols:
-    print(f"Fixed infinite values in columns: {inf_cols}")
-
-# Check for extremely large values (potential outliers)
 for col in df_customer.select_dtypes(include=[np.number]).columns:
-    if col in df_customer.columns:
+    if not df_customer[col].isna().all():
         q99 = df_customer[col].quantile(0.99)
-        q01 = df_customer[col].quantile(0.01)
-
-        # Cap extreme values at 99th percentile
         if q99 > 0 and not pd.isna(q99):
             outlier_count = (df_customer[col] > q99 * 10).sum()
             if outlier_count > 0:
@@ -622,7 +435,6 @@ for col in df_customer.select_dtypes(include=[np.number]).columns:
 # --- Step 10: Feature Selection and Final Preparation ---
 print("Step 10: Preparing final dataset...")
 
-# Create a summary of the features created
 feature_categories = {
     'Identity': ['CUST_NBR', 'CUST_CLASS', 'CUST_CAT', 'CUST_CRTN', 'HOME_BRCH_NBR', 'CUST_AGE', 'MRTL_STS'],
     'Account_Info': ['JNT_ACCT_FLAG', 'JNT_ACCT_FLG_NUM', 'ACCT_OPN_DT', 'TENURE_DAYS'],
@@ -633,25 +445,22 @@ feature_categories = {
     'Behavioral': ['TXN_VELOCITY', 'TXN_INTENSITY', 'BAL_UTIL', 'CROSS_SELL_SUCCESS', 'RELATION_DEPTH'],
     'Risk_Indicators': ['DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'],
     'Ratios': ['NET_FLOW_RATIO', 'CR_TO_DR_RATIO', 'TXN_CNT_RATIO', 'PROD_DIVERSITY', 'LOAN_TO_INVEST', 'DIGI_TO_PHYS'],
-    'Scores': ['transaction_score', 'product_score', 'INVEST_ORIENT', 'LOAN_SOPHISTICATION', 'SERV_ADOPT'],
+    'Scores': ['TRANSACTION_SCORE', 'PRODUCT_SCORE', 'INVEST_ORIENT', 'LOAN_SOPHISTICATION', 'SERV_ADOPT'],
     'Segments': ['ACT_LVL', 'PREM_BANK']
 }
 
-# Print feature summary
 print("\nFeature Summary:")
 total_features = 0
 for category, features in feature_categories.items():
     existing_features = [f for f in features if f in df_customer.columns]
-    print(f"{category}: {len(existing_features)} features")
     total_features += len(existing_features)
+    print(f"{category}: {len(existing_features)} features")
 
 print(f"\nTotal features created: {total_features}")
 print(f"Total customers: {len(df_customer)}")
 
-# Check for duplicates
-duplicates = df_customer.duplicated(subset=['CUST_NBR']).sum()
-if duplicates > 0:
-    print(f"Warning: {duplicates} duplicate customers found")
+if df_customer.duplicated(subset=['CUST_NBR']).sum() > 0:
+    print(f"Warning: {df_customer.duplicated(subset=['CUST_NBR']).sum()} duplicate customers found")
     df_customer = df_customer.drop_duplicates(subset=['CUST_NBR'])
 
 # --- Step 11: Save Output ---
@@ -660,19 +469,15 @@ print("Step 11: Saving final dataset...")
 try:
     df_customer.to_csv('customer_segmentation_data.csv', index=False)
     print("Dataset saved successfully as 'customer_segmentation_data.csv'")
-
-    # Save feature mapping for reference
+    
     feature_mapping = pd.DataFrame([
-        {'Feature': feature, 'Category': category}
-        for category, features in feature_categories.items()
-        for feature in features if feature in df_customer.columns
+        {'Feature': f, 'Category': c} for c, features in feature_categories.items() 
+        for f in features if f in df_customer.columns
     ])
     feature_mapping.to_csv('feature_mapping.csv', index=False)
     print("Feature mapping saved as 'feature_mapping.csv'")
-
-    # Create a basic data summary
-    summary_stats = df_customer.describe()
-    summary_stats.to_csv('data_summary.csv')
+    
+    df_customer.describe().to_csv('data_summary.csv')
     print("Data summary saved as 'data_summary.csv'")
 
 except Exception as e:
@@ -681,26 +486,22 @@ except Exception as e:
 # --- Step 12: Final Validation ---
 print("\nStep 12: Final validation...")
 
-# Check data types
 print("\nData types summary:")
 print(df_customer.dtypes.value_counts())
 
-# Check for missing values in key columns
-key_columns = ['CUST_NBR', 'TXN_FREQ', 'TOTAL_PRODUCT', 'DIGITAL_ENGAGE']
-missing_summary = df_customer[key_columns].isnull().sum()
+key_columns = [col for col in ['CUST_NBR', 'TXN_FREQ', 'TOTAL_PRODUCT', 'DIGITAL_ENGAGE'] 
+               if col in df_customer.columns]
 print(f"\nMissing values in key columns:")
-print(missing_summary)
+print(df_customer[key_columns].isnull().sum())
 
-# Basic statistics
 print(f"\nBasic statistics:")
 print(f"Average transaction frequency: {df_customer['TXN_FREQ'].mean():.2f}")
 print(f"Average products per customer: {df_customer['TOTAL_PRODUCT'].mean():.2f}")
 print(f"Average digital engagement: {df_customer.get('DIGITAL_ENGAGE', pd.Series([0])).mean():.2f}")
 
-# Distribution of activity levels
 if 'ACT_LVL' in df_customer.columns:
     print(f"\nActivity level distribution:")
-    print(df_customer['ACT_LVL'].value_counts())
+    print(df_customer['ACT_LVL'].value_counts(dropna=False))
 
 print("\n" + "="*50)
 print("CUSTOMER SEGMENTATION DATA PROCESSING COMPLETE")
