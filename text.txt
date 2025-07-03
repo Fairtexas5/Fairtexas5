@@ -47,13 +47,15 @@ if 'CUST_NBR' not in df_sb.columns:
     print("Error: 'CUST_NBR' column not found")
     df_customer = pd.DataFrame()
 else:
-    # Define column groups for aggregation
+    # Define tier hierarchy and column groups
+    tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
+    tier_hierarchy = {tier: idx for idx, tier in enumerate(tier_cols)}  # Higher index = higher tier
+    
     service_cols = ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY']
     product_cols = ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI',
                     'SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN',
                     'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
-                    'SBI_MF', 'SBI_CAP', 'ATM', 'MBS', 'YONO', 'UPI', 'INB',
-                    'LOCKER', 'ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
+                    'SBI_MF', 'SBI_CAP', 'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'LOCKER']
     
     balance_cols = ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
                     'AQB', 'TDV', 'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO',
@@ -63,10 +65,20 @@ else:
     date_cols = ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
     
     # Filter to existing columns
+    tier_cols = [col for col in tier_cols if col in df_sb.columns]
     service_cols = [col for col in service_cols if col in df_sb.columns]
     product_cols = [col for col in product_cols if col in df_sb.columns]
     balance_cols = [col for col in balance_cols if col in df_sb.columns]
     date_cols = [col for col in date_cols if col in df_sb.columns]
+    
+    # Function to determine highest tier for each customer
+    def get_highest_tier(tier_series):
+        """Get the highest tier from tier columns (1 indicates customer has that tier)"""
+        active_tiers = [tier for tier in tier_cols if tier_series.get(tier, 0) > 0]
+        if not active_tiers:
+            return 'NONE'
+        # Return the tier with highest hierarchy value
+        return max(active_tiers, key=lambda x: tier_hierarchy.get(x, -1))
     
     # Calculate tenure if possible
     if 'ACCT_OPN_DT' in df_sb.columns and 'REPORT_DT' in df_sb.columns:
@@ -79,6 +91,9 @@ else:
         # Categorical columns - most frequent value
         **{col: lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else 'Unknown' 
            for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] if col in df_sb.columns},
+        
+        # Tier columns - maximum (to determine if customer has any tier)
+        **{col: 'max' for col in tier_cols},
         
         # Product/service columns - maximum (binary flags)
         **{col: 'max' for col in service_cols + product_cols},
@@ -96,6 +111,14 @@ else:
     
     # Perform aggregation
     df_customer = df_sb.groupby('CUST_NBR').agg(agg_dict).reset_index()
+    
+    # Add highest tier column
+    if tier_cols:
+        df_customer['HIGHEST_TIER'] = df_customer[tier_cols].apply(
+            lambda row: get_highest_tier(row), axis=1
+        )
+    else:
+        df_customer['HIGHEST_TIER'] = 'NONE'
     
     # Clean up data types using vectorized operations
     numeric_cols = [col for col in balance_cols if col in df_customer.columns]
