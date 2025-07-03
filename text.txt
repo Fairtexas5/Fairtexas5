@@ -1,139 +1,104 @@
 # --- Step 4: Account-Level Feature Engineering ---
 print("Step 4: Computing engagement scores...")
 
-# Define feature groups based on main CSV schema
-digital_features = [f for f in ['ATM', 'MBS', 'YONO', 'UPI', 'INB'] if f in df_sb.columns]
-transaction_features = [f for f in ['DR_AMT', 'CR_AMT'] if f in df_sb.columns]
-product_features = [f for f in ['FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN'] if f in df_sb.columns]
+# Define feature groups
+digital_features = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
+transaction_features = ['DR_AMT', 'CR_AMT']
+product_features = ['FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN']
 
-# Validate feature groups
-if not digital_features:
-    print("Warning: No digital features found in df_sb")
-if not transaction_features:
-    print("Warning: No transaction features found in df_sb")
-if not product_features:
-    print("Warning: No product features found in df_sb")
+# Filter to only existing columns
+digital_features = [f for f in digital_features if f in df_sb.columns]
+transaction_features = [f for f in transaction_features if f in df_sb.columns]
+product_features = [f for f in product_features if f in df_sb.columns]
 
-# Compute weights
-def compute_weights(df, features, base_weights, group_col='CUST_CLASS'):
-    if not features or group_col not in df.columns:
-        print(f"Warning: Skipping weight computation for {group_col}. Using default weights.")
-        return {'DEFAULT': {f: base_weights.get(f, 1.0) for f in features}}
+# Define base weights
+base_weights = {
+    'INB': 5.0, 'YONO': 4.0, 'MBS': 3.0, 'UPI': 2.0, 'ATM': 1.0,
+    'DR_AMT': 1.0, 'CR_AMT': 1.0,
+    'FD': 3.0, 'RD': 2.0, 'PERSONAL_LOAN': 4.0, 'HOME_LOAN': 5.0
+}
 
-    try:
-        overall_usage = df[features].mean(numeric_only=True)
-        tier_usage = df.groupby(group_col)[features].mean(numeric_only=True)
-        weights = {'DEFAULT': {f: base_weights.get(f, 1.0) for f in features}}
-        for tier in tier_usage.index:
-            weights[tier] = {f: base_weights.get(f, 1.0) * (tier_usage.loc[tier, f] / (overall_usage[f] + 1e-6))
-                             for f in features if f in tier_usage.columns}
-        return weights
-    except Exception as e:
-        print(f"Error computing weights for {group_col}: {e}. Using default weights.")
-        return {'DEFAULT': {f: base_weights.get(f, 1.0) for f in features}}
+# Calculate engagement scores using vectorized operations
+# Digital engagement score
+if digital_features:
+    df_sb['DIGITAL_ENGAGE'] = sum(df_sb[f].fillna(0) * base_weights.get(f, 1.0) for f in digital_features)
+else:
+    df_sb['DIGITAL_ENGAGE'] = 0.0
 
-base_weights_digital = {'INB': 5.0, 'YONO': 4.0, 'MBS': 3.0, 'UPI': 2.0, 'ATM': 1.0}
-base_weights_transaction = {'DR_AMT': 1.0, 'CR_AMT': 1.0}
-base_weights_product = {'FD': 3.0, 'RD': 2.0, 'PERSONAL_LOAN': 4.0, 'HOME_LOAN': 5.0}
+# Transaction score
+if transaction_features:
+    df_sb['TRANSACTION_SCORE'] = sum(df_sb[f].fillna(0) * base_weights.get(f, 1.0) for f in transaction_features)
+else:
+    df_sb['TRANSACTION_SCORE'] = 0.0
 
-# Compute weights
-weights_digital = compute_weights(df_sb, digital_features, base_weights_digital)
-weights_transaction = compute_weights(df_sb, transaction_features, base_weights_transaction)
-weights_product = compute_weights(df_sb, product_features, base_weights_product)
-
-# Log weights
-print("Computed weights:",
-      f"Digital: {weights_digital.get('DEFAULT', {})}",
-      f"Transaction: {weights_transaction.get('DEFAULT', {})}",
-      f"Product: {weights_product.get('DEFAULT', {})}", sep='\n')
-
-# Compute scores (vectorized)
-df_sb['CUST_CLASS'] = df_sb['CUST_CLASS'].fillna('DEFAULT')
-for feature_group, weights in [(digital_features, weights_digital, 'DIGITAL_ENGAGE'),
-                              (transaction_features, weights_transaction, 'TRANSACTION_SCORE'),
-                              (product_features, weights_product, 'PRODUCT_SCORE')]:
-    if feature_group:
-        score = pd.Series(0.0, index=df_sb.index)
-        for f in feature_group:
-            for tier in weights.keys():
-                mask = df_sb['CUST_CLASS'] == tier
-                score[mask] += df_sb.loc[mask, f].fillna(0) * weights[tier].get(f, 1.0)
-        df_sb[weights[-1]] = score
-    else:
-        df_sb[weights[-1]] = 0.0
-
-# Ensure numeric types
-df_sb['DIGITAL_ENGAGE'] = pd.to_numeric(df_sb['DIGITAL_ENGAGE'], errors='coerce').fillna(0.0)
-df_sb['TRANSACTION_SCORE'] = pd.to_numeric(df_sb['TRANSACTION_SCORE'], errors='coerce').fillna(0.0)
-df_sb['PRODUCT_SCORE'] = pd.to_numeric(df_sb['PRODUCT_SCORE'], errors='coerce').fillna(0.0)
+# Product score
+if product_features:
+    df_sb['PRODUCT_SCORE'] = sum(df_sb[f].fillna(0) * base_weights.get(f, 1.0) for f in product_features)
+else:
+    df_sb['PRODUCT_SCORE'] = 0.0
 
 print(f"Engagement scores computed for {len(df_sb)} accounts")
 
 # --- Step 5: Customer-Level Aggregation ---
 print("Step 5: Aggregating to customer level...")
 
-# Validate CUST_NBR
+# Check if CUST_NBR exists
 if 'CUST_NBR' not in df_sb.columns:
-    print("Error: 'CUST_NBR' column not found in df_sb. Skipping aggregation.")
-    df_customer = pd.DataFrame(columns=['CUST_NBR', 'CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'])
+    print("Error: 'CUST_NBR' column not found")
+    df_customer = pd.DataFrame()
 else:
-    # Define service and product columns
-    service_cols = [col for col in ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY']
-                    if col in df_sb.columns]
-    product_cols = [col for col in ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI',
-                                    'SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN',
-                                    'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
-                                    'SBI_MF', 'SBI_CAP', 'SBI_CARD', 'SBI_LFE', 'SBI_GNRL',
-                                    'APY', 'NPS', 'PMJJY', 'PMSBY', 'ATM', 'MBS', 'YONO',
-                                    'UPI', 'INB', 'LOCKER', 'ROHDIUM', 'PLATINUM', 'DIAMOND',
-                                    'GOLD', 'SILVER'] if col in df_sb.columns]
-    balance_cols = [col for col in ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
-                                    'AQB', 'TDV', 'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO',
-                                    'HOME_LOAN_AMT', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE',
-                                    'PRODUCT_SCORE', 'TOTAL_DR_CNT', 'TOTAL_CR_CNT',
-                                    'TOTAL_DR_AMT', 'TOTAL_CR_AMT', 'TOTAL_HV_AMT',
-                                    'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
-                                    'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT'] if col in df_sb.columns]
-    date_cols = [col for col in ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
-                 if col in df_sb.columns]
-
-    # Compute TENURE_DAYS if possible
+    # Define column groups for aggregation
+    service_cols = ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY']
+    product_cols = ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI',
+                    'SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN',
+                    'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
+                    'SBI_MF', 'SBI_CAP', 'ATM', 'MBS', 'YONO', 'UPI', 'INB',
+                    'LOCKER', 'ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
+    
+    balance_cols = ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
+                    'AQB', 'TDV', 'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO',
+                    'HOME_LOAN_AMT', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE',
+                    'PRODUCT_SCORE']
+    
+    date_cols = ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
+    
+    # Filter to existing columns
+    service_cols = [col for col in service_cols if col in df_sb.columns]
+    product_cols = [col for col in product_cols if col in df_sb.columns]
+    balance_cols = [col for col in balance_cols if col in df_sb.columns]
+    date_cols = [col for col in date_cols if col in df_sb.columns]
+    
+    # Calculate tenure if possible
     if 'ACCT_OPN_DT' in df_sb.columns and 'REPORT_DT' in df_sb.columns:
-        df_sb['TENURE_DAYS'] = (df_sb['REPORT_DT'] - df_sb['ACCT_OPN_DT']).dt.days.fillna(0).clip(lower=0)
-        date_cols.append('TENURE_DAYS')
-
-    # Define aggregation dictionary
-    customer_agg_dict = {
-        'CUST_CLASS': lambda x: x.mode().iloc[0] if x.notna().any() else 'Unknown',
-        'CUST_CAT': lambda x: x.mode().iloc[0] if x.notna().any() else 'Unknown',
-        'JNT_ACCT_FLG': lambda x: x.mode().iloc[0] if x.notna().any() else 'N',
-        **{f: 'max' for f in product_cols},
-        **{f: 'sum' for f in balance_cols},
-        **{f: agg for f, agg in {
-            'ACCT_OPN_DT': 'min',
-            'REPORT_DT': 'max',
-            'LST_CUST_CR_DT': 'max',
-            'LST_CUST_DR_DT': 'max',
+        df_sb['TENURE_DAYS'] = (df_sb['REPORT_DT'] - df_sb['ACCT_OPN_DT']).dt.days
+        df_sb['TENURE_DAYS'] = df_sb['TENURE_DAYS'].fillna(0).clip(lower=0)
+        balance_cols.append('TENURE_DAYS')
+    
+    # Create aggregation dictionary using dictionary comprehension
+    agg_dict = {
+        # Categorical columns - most frequent value
+        **{col: lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else 'Unknown' 
+           for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] if col in df_sb.columns},
+        
+        # Product/service columns - maximum (binary flags)
+        **{col: 'max' for col in service_cols + product_cols},
+        
+        # Balance/amount columns - sum
+        **{col: 'sum' for col in balance_cols},
+        
+        # Date columns - specific aggregation
+        **{col: agg_type for col, agg_type in {
+            'ACCT_OPN_DT': 'min', 'REPORT_DT': 'max', 
+            'LST_CUST_CR_DT': 'max', 'LST_CUST_DR_DT': 'max', 
             'TENURE_DAYS': 'max'
-        }.items() if f in df_sb.columns}
+        }.items() if col in df_sb.columns}
     }
-
-    try:
-        df_customer = df_sb.groupby('CUST_NBR').agg(customer_agg_dict).reset_index()
-
-        # Ensure type consistency
-        for col in balance_cols:
-            if col in df_customer.columns:
-                df_customer[col] = pd.to_numeric(df_customer[col], errors='coerce').fillna(0.0)
-        for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG']:
-            if col in df_customer.columns:
-                df_customer[col] = df_customer[col].astype('object')
-        for col in date_cols:
-            if col in df_customer.columns and col != 'TENURE_DAYS':
-                df_customer[col] = pd.to_datetime(df_customer[col], errors='coerce')
-
-        print(f"Customer aggregation complete: {len(df_customer)} customers with {len(df_customer.columns)-1} features")
-    except Exception as e:
-        print(f"Error in customer aggregation: {e}")
-        df_customer = pd.DataFrame(columns=['CUST_NBR', 'CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] + balance_cols)
-        print(f"Fallback to empty DataFrame with {len(df_customer.columns)} columns")
+    
+    # Perform aggregation
+    df_customer = df_sb.groupby('CUST_NBR').agg(agg_dict).reset_index()
+    
+    # Clean up data types using vectorized operations
+    numeric_cols = [col for col in balance_cols if col in df_customer.columns]
+    df_customer[numeric_cols] = df_customer[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+    
+    print(f"Customer aggregation complete: {len(df_customer)} customers with {len(df_customer.columns)} features")
