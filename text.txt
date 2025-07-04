@@ -125,3 +125,117 @@ else:
     df_customer[numeric_cols] = df_customer[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
     
     print(f"Customer aggregation complete: {len(df_customer)} customers with {len(df_customer.columns)} features")
+
+
+
+
+
+
+
+
+
+# --- Step 5: Customer-Level Aggregation ---
+print("Step 5: Aggregating to customer level...")
+
+# Check if CUST_NBR exists
+if 'CUST_NBR' not in df_sb.columns:
+    print("Error: 'CUST_NBR' column not found")
+    df_customer = pd.DataFrame(columns=['CUST_NBR'])
+else:
+    # Define tier hierarchy and column groups
+    tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
+    tier_cols = [col for col in tier_cols if col in df_sb.columns]
+    tier_hierarchy = {tier: idx for idx, tier in enumerate(tier_cols)}  # Higher index = higher tier
+
+    service_cols = [col for col in ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY'] if col in df_sb.columns]
+    product_cols = [col for col in ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI',
+                                    'SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN',
+                                    'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
+                                    'SBI_MF', 'SBI_CAP', 'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'LOCKER']
+                    if col in df_sb.columns]
+    balance_cols = [col for col in ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
+                                    'AQB', 'TDV', 'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO',
+                                    'HOME_LOAN_AMT', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE',
+                                    'PRODUCT_SCORE'] if col in df_sb.columns]
+    date_cols = [col for col in ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT'] if col in df_sb.columns]
+    
+    # Transaction features from Step 1
+    transaction_cols = [col for col in ['TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
+                                       'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
+                                       'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT', 'HV_AMT_RATIO', 'DIG_AMT_RATIO',
+                                       'AVG_TXN_VALUE', 'TXN_CNT_GROWTH', 'TXN_AMT_GROWTH', 'TXN_CONSISTENCY']
+                       if col in df_sb.columns]
+
+    # Calculate tenure if possible
+    if 'ACCT_OPN_DT' in df_sb.columns and 'REPORT_DT' in df_sb.columns:
+        df_sb['TENURE_DAYS'] = (df_sb['REPORT_DT'] - df_sb['ACCT_OPN_DT']).dt.days
+        df_sb['TENURE_DAYS'] = df_sb['TENURE_DAYS'].fillna(0).clip(lower=0)
+        if 'TENURE_DAYS' not in balance_cols:
+            balance_cols.append('TENURE_DAYS')
+
+    # Function to determine highest tier for each customer
+    def get_highest_tier(tier_series):
+        """Get the highest tier from tier columns (1 indicates customer has that tier)"""
+        active_tiers = [tier for tier in tier_cols if tier_series.get(tier, 0) > 0]
+        if not active_tiers:
+            return 'NONE'
+        return max(active_tiers, key=lambda x: tier_hierarchy.get(x, -1))
+
+    # Create aggregation dictionary
+    agg_dict = {
+        # Categorical columns - most frequent value
+        **{col: lambda x: x.mode().iloc[0] if x.notna().any() else 'Unknown'
+           for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] if col in df_sb.columns},
+        # Tier columns - maximum
+        **{col: 'max' for col in tier_cols},
+        # Product/service columns - maximum (binary flags)
+        **{col: 'max' for col in service_cols + product_cols},
+        # Balance/amount columns - sum
+        **{col: 'sum' for col in balance_cols},
+        # Transaction columns - sum for counts/amounts, mean for ratios
+        **{col: 'sum' if col in ['TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
+                                 'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
+                                 'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT'] else 'mean'
+           for col in transaction_cols},
+        # Date columns - specific aggregation
+        **{col: agg_type for col, agg_type in {
+            'ACCT_OPN_DT': 'min', 'REPORT_DT': 'max',
+            'LST_CUST_CR_DT': 'max', 'LST_CUST_DR_DT': 'max',
+            'TENURE_DAYS': 'max'
+        }.items() if col in df_sb.columns}
+    }
+
+    try:
+        # Perform aggregation
+        df_customer = df_sb.groupby('CUST_NBR').agg(agg_dict).reset_index()
+
+        # Add highest tier column
+        if tier_cols:
+            df_customer['HIGHEST_TIER'] = df_customer[tier_cols].apply(
+                lambda row: get_highest_tier(row), axis=1
+            )
+        else:
+            df_customer['HIGHEST_TIER'] = 'NONE'
+
+        # Clean up data types
+        numeric_cols = balance_cols + [col for col in transaction_cols if col in df_customer.columns]
+        for col in numeric_cols:
+            if col in df_customer.columns:
+                df_customer[col] = pd.to_numeric(df_customer[col], errors='coerce').fillna(0)
+        
+        categorical_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER']
+        for col in categorical_cols:
+            if col in df_customer.columns:
+                df_customer[col] = df_customer[col].astype('object')
+        
+        for col in date_cols:
+            if col in df_customer.columns:
+                df_customer[col] = pd.to_datetime(df_customer[col], errors='coerce')
+
+        print(f"Customer aggregation complete: {len(df_customer)} customers with {len(df_customer.columns)-1} features")
+    except Exception as e:
+        print(f"Error in customer aggregation: {e}")
+        df_customer = pd.DataFrame(columns=['CUST_NBR', 'CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER'] + balance_cols + transaction_cols)
+        print(f"Fallback to empty DataFrame with {len(df_customer.columns)} columns")
+
+
