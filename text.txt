@@ -1,77 +1,73 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
+from sklearn.decomposition import KernelPCA
+from sklearn.compose import ColumnTransformer
 import warnings
-warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=UserWarning)  # Suppress warnings
 
 # Step 1: Data Preparation
-print("Step 1: Preparing data for TruncatedSVD...")
+print("Step 1: Preparing data for Kernel PCA...")
 
-# Select numeric columns (float64 and int64)
+# Select numeric and categorical columns
 numeric_cols = df_customer.select_dtypes(include=['float64', 'int64']).columns
-df_numeric = df_customer[numeric_cols]
+categorical_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS']
+ordinal_cols = ['ACT_LVL']
+all_cols = list(numeric_cols) + categorical_cols + ordinal_cols
 print(f"Selected {len(numeric_cols)} numeric features: {list(numeric_cols)}")
-
-# Select categorical columns (object and category, excluding CUST_NBR and dates)
-categorical_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS', 'ACT_LVL']
-categorical_cols = [col for col in categorical_cols if col in df_customer.columns]
 print(f"Selected {len(categorical_cols)} categorical features: {categorical_cols}")
+print(f"Selected {len(ordinal_cols)} ordinal feature: {ordinal_cols}")
 
-# Encode categorical features
-df_categorical = df_customer[categorical_cols].copy()
-label_encoders = {}
-for col in categorical_cols:
-    le = LabelEncoder()
-    df_categorical[col] = le.fit_transform(df_customer[col].astype(str))  # Convert to string for consistency
-    label_encoders[col] = le
-print("Categorical features encoded with LabelEncoder")
+# Define preprocessing pipeline
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numeric_cols),
+        ('cat', OneHotEncoder(sparse_output=False, handle_unknown='ignore'), categorical_cols),
+        ('ord', OrdinalEncoder(categories=[['Low', 'Medium', 'High', 'Very_High']]), ordinal_cols)
+    ],
+    remainder='drop'  # Drop CUST_NBR, date columns
+)
 
-# Combine numeric and encoded categorical features
-df_combined = pd.concat([df_numeric, df_categorical], axis=1).astype('float32')
-print(f"Combined {len(df_combined.columns)} features (numeric + categorical)")
+# Apply preprocessing
+df_processed = preprocessor.fit_transform(df_customer[all_cols])
+# Get feature names for one-hot encoded columns
+cat_feature_names = preprocessor.named_transformers_['cat'].get_feature_names_out(categorical_cols)
+feature_names = list(numeric_cols) + list(cat_feature_names) + ordinal_cols
+df_processed = pd.DataFrame(df_processed, columns=feature_names, index=df_customer.index).astype('float32')
+print(f"Preprocessed data shape: {df_processed.shape} (includes {len(cat_feature_names)} one-hot encoded features)")
 
-# Normalize the data
-scaler = StandardScaler()
-df_scaled = scaler.fit_transform(df_combined)
-df_scaled = pd.DataFrame(df_scaled, columns=df_combined.columns, index=df_customer.index).astype('float32')
-print("Data normalized to zero mean and unit variance")
-
-# Step 2: Dimensionality Reduction with TruncatedSVD
-print("Step 2: Running TruncatedSVD dimensionality reduction...")
-svd = TruncatedSVD(
+# Step 2: Dimensionality Reduction with Kernel PCA
+print("Step 2: Running Kernel PCA dimensionality reduction...")
+kpca = KernelPCA(
     n_components=2,      # Reduce to 2D
+    kernel='rbf',        # Non-linear RBF kernel
+    gamma=None,          # Auto: 1/n_features
+    n_jobs=-1,           # Use all 5 vCPUs
     random_state=42      # Reproducibility
 )
-embedding = svd.fit_transform(df_scaled)
-embedding = pd.DataFrame(embedding, columns=['SVD1', 'SVD2'], index=df_customer.index).astype('float32')
-print(f"TruncatedSVD reduction complete: Shape of embedding = {embedding.shape}")
-print(f"Explained variance ratio: {svd.explained_variance_ratio_}")
-print(f"Total explained variance: {sum(svd.explained_variance_ratio_):.4f}")
+embedding = kpca.fit_transform(df_processed)
+embedding = pd.DataFrame(embedding, columns=['KPCA1', 'KPCA2'], index=df_customer.index).astype('float32')
+print(f"Kernel PCA reduction complete: Shape of embedding = {embedding.shape}")
 
 # Step 3: Add embedding to original DataFrame
-df_customer['SVD1'] = embedding['SVD1']
-df_customer['SVD2'] = embedding['SVD2']
-print(f"Added SVD1 and SVD2 to df_customer. New shape: {df_customer.shape}")
+df_customer['KPCA1'] = embedding['KPCA1']
+df_customer['KPCA2'] = embedding['KPCA2']
+print(f"Added KPCA1 and KPCA2 to df_customer. New shape: {df_customer.shape}")
 
-# Step 4: Save embedding and label encoders
-embedding.to_pickle('svd_embedding_with_categorical.pkl')
-print("TruncatedSVD embedding saved to 'svd_embedding_with_categorical.pkl'")
-import pickle
-with open('label_encoders.pkl', 'wb') as f:
-    pickle.dump(label_encoders, f)
-print("Label encoders saved to 'label_encoders.pkl'")
+# Step 4: Save embedding for clustering
+embedding.to_pickle('kpca_embedding.pkl')
+print("Kernel PCA embedding saved to 'kpca_embedding.pkl'")
 
-# Optional: Visualize SVD embedding
+# Optional: Visualize
 try:
     import matplotlib.pyplot as plt
     plt.figure(figsize=(10, 6))
-    plt.scatter(embedding['SVD1'], embedding['SVD2'], s=1, alpha=0.5)
-    plt.title('TruncatedSVD Embedding with Categorical Features')
-    plt.xlabel('SVD1')
-    plt.ylabel('SVD2')
-    plt.savefig('svd_categorical_visualization.png')
+    plt.scatter(embedding['KPCA1'], embedding['KPCA2'], s=1, alpha=0.5)
+    plt.title('Kernel PCA Embedding of Customers')
+    plt.xlabel('KPCA1')
+    plt.ylabel('KPCA2')
+    plt.savefig('kpca_visualization.png')
     plt.close()
-    print("TruncatedSVD visualization saved to 'svd_categorical_visualization.png'")
+    print("Kernel PCA visualization saved to 'kpca_visualization.png'")
 except ImportError:
     print("Matplotlib not installed. Skipping visualization.")
