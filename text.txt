@@ -1,241 +1,57 @@
-# --- Step 4: Account-Level Feature Engineering ---
-print("Step 4: Computing engagement scores...")
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+import umap
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning)  # Suppress UMAP warnings
 
-# Define feature groups
-digital_features = ['ATM', 'MBS', 'YONO', 'UPI', 'INB']
-transaction_features = ['DR_AMT', 'CR_AMT']
-product_features = ['FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN']
+# Step 1: Data Preparation
+print("Step 1: Preparing data for UMAP...")
 
-# Filter to only existing columns
-digital_features = [f for f in digital_features if f in df_sb.columns]
-transaction_features = [f for f in transaction_features if f in df_sb.columns]
-product_features = [f for f in product_features if f in df_sb.columns]
+# Select numeric columns (float64 and int64)
+numeric_cols = df_customer.select_dtypes(include=['float64', 'int64']).columns
+df_numeric = df_customer[numeric_cols]
+print(f"Selected {len(numeric_cols)} numeric features for UMAP: {list(numeric_cols)}")
 
-# Define base weights
-base_weights = {
-    'INB': 5.0, 'YONO': 4.0, 'MBS': 3.0, 'UPI': 2.0, 'ATM': 1.0,
-    'DR_AMT': 1.0, 'CR_AMT': 1.0,
-    'FD': 3.0, 'RD': 2.0, 'PERSONAL_LOAN': 4.0, 'HOME_LOAN': 5.0
-}
+# Normalize the data
+scaler = StandardScaler()
+df_scaled = scaler.fit_transform(df_numeric)
+df_scaled = pd.DataFrame(df_scaled, columns=numeric_cols, index=df_customer.index).astype('float32')
+print("Data normalized to zero mean and unit variance")
 
-# Calculate engagement scores using vectorized operations
-# Digital engagement score
-if digital_features:
-    df_sb['DIGITAL_ENGAGE'] = sum(df_sb[f].fillna(0) * base_weights.get(f, 1.0) for f in digital_features)
-else:
-    df_sb['DIGITAL_ENGAGE'] = 0.0
+# Step 2: Dimensionality Reduction with UMAP
+print("Step 2: Running UMAP dimensionality reduction...")
+reducer = umap.UMAP(
+    n_components=2,      # Reduce to 2D for clustering and visualization
+    n_neighbors=15,      # Balance local vs. global structure
+    min_dist=0.1,        # Allow points to spread out
+    metric='euclidean',  # Standard distance metric
+    n_jobs=-1,           # Use all 5 vCPUs
+    random_state=42      # Reproducibility
+)
+embedding = reducer.fit_transform(df_scaled)
+embedding = pd.DataFrame(embedding, columns=['UMAP1', 'UMAP2'], index=df_customer.index).astype('float32')
+print("UMAP reduction complete: Shape of embedding =", embedding.shape)
 
-# Transaction score
-if transaction_features:
-    df_sb['TRANSACTION_SCORE'] = sum(df_sb[f].fillna(0) * base_weights.get(f, 1.0) for f in transaction_features)
-else:
-    df_sb['TRANSACTION_SCORE'] = 0.0
+# Step 3: Add embedding to original DataFrame
+df_customer['UMAP1'] = embedding['UMAP1']
+df_customer['UMAP2'] = embedding['UMAP2']
+print(f"Added UMAP1 and UMAP2 to df_customer. New shape: {df_customer.shape}")
 
-# Product score
-if product_features:
-    df_sb['PRODUCT_SCORE'] = sum(df_sb[f].fillna(0) * base_weights.get(f, 1.0) for f in product_features)
-else:
-    df_sb['PRODUCT_SCORE'] = 0.0
+# Step 4: Save embedding for clustering
+embedding.to_pickle('umap_embedding.pkl')
+print("UMAP embedding saved to 'umap_embedding.pkl'")
 
-print(f"Engagement scores computed for {len(df_sb)} accounts")
-
-# --- Step 5: Customer-Level Aggregation ---
-print("Step 5: Aggregating to customer level...")
-
-# Check if CUST_NBR exists
-if 'CUST_NBR' not in df_sb.columns:
-    print("Error: 'CUST_NBR' column not found")
-    df_customer = pd.DataFrame()
-else:
-    # Define tier hierarchy and column groups
-    tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
-    tier_hierarchy = {tier: idx for idx, tier in enumerate(tier_cols)}  # Higher index = higher tier
-    
-    service_cols = ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY']
-    product_cols = ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI',
-                    'SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN',
-                    'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
-                    'SBI_MF', 'SBI_CAP', 'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'LOCKER']
-    
-    balance_cols = ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
-                    'AQB', 'TDV', 'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO',
-                    'HOME_LOAN_AMT', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE',
-                    'PRODUCT_SCORE']
-    
-    date_cols = ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
-    
-    # Filter to existing columns
-    tier_cols = [col for col in tier_cols if col in df_sb.columns]
-    service_cols = [col for col in service_cols if col in df_sb.columns]
-    product_cols = [col for col in product_cols if col in df_sb.columns]
-    balance_cols = [col for col in balance_cols if col in df_sb.columns]
-    date_cols = [col for col in date_cols if col in df_sb.columns]
-    
-    # Function to determine highest tier for each customer
-    def get_highest_tier(tier_series):
-        """Get the highest tier from tier columns (1 indicates customer has that tier)"""
-        active_tiers = [tier for tier in tier_cols if tier_series.get(tier, 0) > 0]
-        if not active_tiers:
-            return 'NONE'
-        # Return the tier with highest hierarchy value
-        return max(active_tiers, key=lambda x: tier_hierarchy.get(x, -1))
-    
-    # Calculate tenure if possible
-    if 'ACCT_OPN_DT' in df_sb.columns and 'REPORT_DT' in df_sb.columns:
-        df_sb['TENURE_DAYS'] = (df_sb['REPORT_DT'] - df_sb['ACCT_OPN_DT']).dt.days
-        df_sb['TENURE_DAYS'] = df_sb['TENURE_DAYS'].fillna(0).clip(lower=0)
-        balance_cols.append('TENURE_DAYS')
-    
-    # Create aggregation dictionary using dictionary comprehension
-    agg_dict = {
-        # Categorical columns - most frequent value
-        **{col: lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else 'Unknown' 
-           for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] if col in df_sb.columns},
-        
-        # Tier columns - maximum (to determine if customer has any tier)
-        **{col: 'max' for col in tier_cols},
-        
-        # Product/service columns - maximum (binary flags)
-        **{col: 'max' for col in service_cols + product_cols},
-        
-        # Balance/amount columns - sum
-        **{col: 'sum' for col in balance_cols},
-        
-        # Date columns - specific aggregation
-        **{col: agg_type for col, agg_type in {
-            'ACCT_OPN_DT': 'min', 'REPORT_DT': 'max', 
-            'LST_CUST_CR_DT': 'max', 'LST_CUST_DR_DT': 'max', 
-            'TENURE_DAYS': 'max'
-        }.items() if col in df_sb.columns}
-    }
-    
-    # Perform aggregation
-    df_customer = df_sb.groupby('CUST_NBR').agg(agg_dict).reset_index()
-    
-    # Add highest tier column
-    if tier_cols:
-        df_customer['HIGHEST_TIER'] = df_customer[tier_cols].apply(
-            lambda row: get_highest_tier(row), axis=1
-        )
-    else:
-        df_customer['HIGHEST_TIER'] = 'NONE'
-    
-    # Clean up data types using vectorized operations
-    numeric_cols = [col for col in balance_cols if col in df_customer.columns]
-    df_customer[numeric_cols] = df_customer[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
-    
-    print(f"Customer aggregation complete: {len(df_customer)} customers with {len(df_customer.columns)} features")
-
-
-
-
-
-
-
-
-
-# --- Step 5: Customer-Level Aggregation ---
-print("Step 5: Aggregating to customer level...")
-
-# Check if CUST_NBR exists
-if 'CUST_NBR' not in df_sb.columns:
-    print("Error: 'CUST_NBR' column not found")
-    df_customer = pd.DataFrame(columns=['CUST_NBR'])
-else:
-    # Define tier hierarchy and column groups
-    tier_cols = ['ROHDIUM', 'PLATINUM', 'DIAMOND', 'GOLD', 'SILVER']
-    tier_cols = [col for col in tier_cols if col in df_sb.columns]
-    tier_hierarchy = {tier: idx for idx, tier in enumerate(tier_cols)}  # Higher index = higher tier
-
-    service_cols = [col for col in ['SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'PMJJY', 'PMSBY'] if col in df_sb.columns]
-    product_cols = [col for col in ['SALARY', 'STAFF', 'NRI', 'AGRI', 'SME', 'SBF', 'SSI',
-                                    'SAVINGS_BANK', 'FD', 'RD', 'PERSONAL_LOAN', 'HOME_LOAN',
-                                    'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
-                                    'SBI_MF', 'SBI_CAP', 'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'LOCKER']
-                    if col in df_sb.columns]
-    balance_cols = [col for col in ['END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
-                                    'AQB', 'TDV', 'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO',
-                                    'HOME_LOAN_AMT', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE',
-                                    'PRODUCT_SCORE'] if col in df_sb.columns]
-    date_cols = [col for col in ['ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT'] if col in df_sb.columns]
-    
-    # Transaction features from Step 1
-    transaction_cols = [col for col in ['TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
-                                       'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
-                                       'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT', 'HV_AMT_RATIO', 'DIG_AMT_RATIO',
-                                       'AVG_TXN_VALUE', 'TXN_CNT_GROWTH', 'TXN_AMT_GROWTH', 'TXN_CONSISTENCY']
-                       if col in df_sb.columns]
-
-    # Calculate tenure if possible
-    if 'ACCT_OPN_DT' in df_sb.columns and 'REPORT_DT' in df_sb.columns:
-        df_sb['TENURE_DAYS'] = (df_sb['REPORT_DT'] - df_sb['ACCT_OPN_DT']).dt.days
-        df_sb['TENURE_DAYS'] = df_sb['TENURE_DAYS'].fillna(0).clip(lower=0)
-        if 'TENURE_DAYS' not in balance_cols:
-            balance_cols.append('TENURE_DAYS')
-
-    # Function to determine highest tier for each customer
-    def get_highest_tier(tier_series):
-        """Get the highest tier from tier columns (1 indicates customer has that tier)"""
-        active_tiers = [tier for tier in tier_cols if tier_series.get(tier, 0) > 0]
-        if not active_tiers:
-            return 'NONE'
-        return max(active_tiers, key=lambda x: tier_hierarchy.get(x, -1))
-
-    # Create aggregation dictionary
-    agg_dict = {
-        # Categorical columns - most frequent value
-        **{col: lambda x: x.mode().iloc[0] if x.notna().any() else 'Unknown'
-           for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] if col in df_sb.columns},
-        # Tier columns - maximum
-        **{col: 'max' for col in tier_cols},
-        # Product/service columns - maximum (binary flags)
-        **{col: 'max' for col in service_cols + product_cols},
-        # Balance/amount columns - sum
-        **{col: 'sum' for col in balance_cols},
-        # Transaction columns - sum for counts/amounts, mean for ratios
-        **{col: 'sum' if col in ['TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
-                                 'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
-                                 'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT'] else 'mean'
-           for col in transaction_cols},
-        # Date columns - specific aggregation
-        **{col: agg_type for col, agg_type in {
-            'ACCT_OPN_DT': 'min', 'REPORT_DT': 'max',
-            'LST_CUST_CR_DT': 'max', 'LST_CUST_DR_DT': 'max',
-            'TENURE_DAYS': 'max'
-        }.items() if col in df_sb.columns}
-    }
-
-    try:
-        # Perform aggregation
-        df_customer = df_sb.groupby('CUST_NBR').agg(agg_dict).reset_index()
-
-        # Add highest tier column
-        if tier_cols:
-            df_customer['HIGHEST_TIER'] = df_customer[tier_cols].apply(
-                lambda row: get_highest_tier(row), axis=1
-            )
-        else:
-            df_customer['HIGHEST_TIER'] = 'NONE'
-
-        # Clean up data types
-        numeric_cols = balance_cols + [col for col in transaction_cols if col in df_customer.columns]
-        for col in numeric_cols:
-            if col in df_customer.columns:
-                df_customer[col] = pd.to_numeric(df_customer[col], errors='coerce').fillna(0)
-        
-        categorical_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER']
-        for col in categorical_cols:
-            if col in df_customer.columns:
-                df_customer[col] = df_customer[col].astype('object')
-        
-        for col in date_cols:
-            if col in df_customer.columns:
-                df_customer[col] = pd.to_datetime(df_customer[col], errors='coerce')
-
-        print(f"Customer aggregation complete: {len(df_customer)} customers with {len(df_customer.columns)-1} features")
-    except Exception as e:
-        print(f"Error in customer aggregation: {e}")
-        df_customer = pd.DataFrame(columns=['CUST_NBR', 'CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER'] + balance_cols + transaction_cols)
-        print(f"Fallback to empty DataFrame with {len(df_customer.columns)} columns")
-
-
+# Optional: Visualize UMAP embedding (requires matplotlib)
+try:
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 6))
+    plt.scatter(embedding['UMAP1'], embedding['UMAP2'], s=1, alpha=0.5)
+    plt.title('UMAP Embedding of Customers')
+    plt.xlabel('UMAP1')
+    plt.ylabel('UMAP2')
+    plt.savefig('umap_visualization.png')
+    plt.close()
+    print("UMAP visualization saved to 'umap_visualization.png'")
+except ImportError:
+    print("Matplotlib not installed. Skipping visualization.")
