@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import TruncatedSVD
 import warnings
-warnings.filterwarnings('ignore', category=UserWarning)  # Suppress warnings
+warnings.filterwarnings('ignore', category=UserWarning)
 
 # Step 1: Data Preparation
 print("Step 1: Preparing data for TruncatedSVD...")
@@ -11,18 +11,36 @@ print("Step 1: Preparing data for TruncatedSVD...")
 # Select numeric columns (float64 and int64)
 numeric_cols = df_customer.select_dtypes(include=['float64', 'int64']).columns
 df_numeric = df_customer[numeric_cols]
-print(f"Selected {len(numeric_cols)} numeric features for TruncatedSVD: {list(numeric_cols)}")
+print(f"Selected {len(numeric_cols)} numeric features: {list(numeric_cols)}")
+
+# Select categorical columns (object and category, excluding CUST_NBR and dates)
+categorical_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS', 'ACT_LVL']
+categorical_cols = [col for col in categorical_cols if col in df_customer.columns]
+print(f"Selected {len(categorical_cols)} categorical features: {categorical_cols}")
+
+# Encode categorical features
+df_categorical = df_customer[categorical_cols].copy()
+label_encoders = {}
+for col in categorical_cols:
+    le = LabelEncoder()
+    df_categorical[col] = le.fit_transform(df_customer[col].astype(str))  # Convert to string for consistency
+    label_encoders[col] = le
+print("Categorical features encoded with LabelEncoder")
+
+# Combine numeric and encoded categorical features
+df_combined = pd.concat([df_numeric, df_categorical], axis=1).astype('float32')
+print(f"Combined {len(df_combined.columns)} features (numeric + categorical)")
 
 # Normalize the data
 scaler = StandardScaler()
-df_scaled = scaler.fit_transform(df_numeric)
-df_scaled = pd.DataFrame(df_scaled, columns=numeric_cols, index=df_customer.index).astype('float32')
+df_scaled = scaler.fit_transform(df_combined)
+df_scaled = pd.DataFrame(df_scaled, columns=df_combined.columns, index=df_customer.index).astype('float32')
 print("Data normalized to zero mean and unit variance")
 
 # Step 2: Dimensionality Reduction with TruncatedSVD
 print("Step 2: Running TruncatedSVD dimensionality reduction...")
 svd = TruncatedSVD(
-    n_components=2,      # Reduce to 2D for clustering and visualization
+    n_components=2,      # Reduce to 2D
     random_state=42      # Reproducibility
 )
 embedding = svd.fit_transform(df_scaled)
@@ -36,20 +54,24 @@ df_customer['SVD1'] = embedding['SVD1']
 df_customer['SVD2'] = embedding['SVD2']
 print(f"Added SVD1 and SVD2 to df_customer. New shape: {df_customer.shape}")
 
-# Step 4: Save embedding for clustering
-embedding.to_pickle('svd_embedding.pkl')
-print("TruncatedSVD embedding saved to 'svd_embedding.pkl'")
+# Step 4: Save embedding and label encoders
+embedding.to_pickle('svd_embedding_with_categorical.pkl')
+print("TruncatedSVD embedding saved to 'svd_embedding_with_categorical.pkl'")
+import pickle
+with open('label_encoders.pkl', 'wb') as f:
+    pickle.dump(label_encoders, f)
+print("Label encoders saved to 'label_encoders.pkl'")
 
-# Optional: Visualize SVD embedding (requires matplotlib)
+# Optional: Visualize SVD embedding
 try:
     import matplotlib.pyplot as plt
     plt.figure(figsize=(10, 6))
     plt.scatter(embedding['SVD1'], embedding['SVD2'], s=1, alpha=0.5)
-    plt.title('TruncatedSVD Embedding of Customers')
+    plt.title('TruncatedSVD Embedding with Categorical Features')
     plt.xlabel('SVD1')
     plt.ylabel('SVD2')
-    plt.savefig('svd_visualization.png')
+    plt.savefig('svd_categorical_visualization.png')
     plt.close()
-    print("TruncatedSVD visualization saved to 'svd_visualization.png'")
+    print("TruncatedSVD visualization saved to 'svd_categorical_visualization.png'")
 except ImportError:
     print("Matplotlib not installed. Skipping visualization.")
