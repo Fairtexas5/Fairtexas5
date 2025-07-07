@@ -1,17 +1,17 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-import umap
+from sklearn.decomposition import PCA
 import warnings
-warnings.filterwarnings('ignore', category=UserWarning)  # Suppress UMAP warnings
+warnings.filterwarnings('ignore', category=UserWarning)  # Suppress warnings
 
 # Step 1: Data Preparation
-print("Step 1: Preparing data for UMAP...")
+print("Step 1: Preparing data for PCA...")
 
 # Select numeric columns (float64 and int64)
 numeric_cols = df_customer.select_dtypes(include=['float64', 'int64']).columns
 df_numeric = df_customer[numeric_cols]
-print(f"Selected {len(numeric_cols)} numeric features for UMAP: {list(numeric_cols)}")
+print(f"Selected {len(numeric_cols)} numeric features for PCA: {list(numeric_cols)}")
 
 # Normalize the data
 scaler = StandardScaler()
@@ -19,39 +19,37 @@ df_scaled = scaler.fit_transform(df_numeric)
 df_scaled = pd.DataFrame(df_scaled, columns=numeric_cols, index=df_customer.index).astype('float32')
 print("Data normalized to zero mean and unit variance")
 
-# Step 2: Dimensionality Reduction with UMAP
-print("Step 2: Running UMAP dimensionality reduction...")
-reducer = umap.UMAP(
+# Step 2: Dimensionality Reduction with PCA
+print("Step 2: Running PCA dimensionality reduction...")
+pca = PCA(
     n_components=2,      # Reduce to 2D for clustering and visualization
-    n_neighbors=15,      # Balance local vs. global structure
-    min_dist=0.1,        # Allow points to spread out
-    metric='euclidean',  # Standard distance metric
-    n_jobs=-1,           # Use all 5 vCPUs
     random_state=42      # Reproducibility
 )
-embedding = reducer.fit_transform(df_scaled)
-embedding = pd.DataFrame(embedding, columns=['UMAP1', 'UMAP2'], index=df_customer.index).astype('float32')
-print("UMAP reduction complete: Shape of embedding =", embedding.shape)
+embedding = pca.fit_transform(df_scaled)
+embedding = pd.DataFrame(embedding, columns=['PCA1', 'PCA2'], index=df_customer.index).astype('float32')
+print(f"PCA reduction complete: Shape of embedding = {embedding.shape}")
+print(f"Explained variance ratio: {pca.explained_variance_ratio_}")
+print(f"Total explained variance: {sum(pca.explained_variance_ratio_):.4f}")
 
 # Step 3: Add embedding to original DataFrame
-df_customer['UMAP1'] = embedding['UMAP1']
-df_customer['UMAP2'] = embedding['UMAP2']
-print(f"Added UMAP1 and UMAP2 to df_customer. New shape: {df_customer.shape}")
+df_customer['PCA1'] = embedding['PCA1']
+df_customer['PCA2'] = embedding['PCA2']
+print(f"Added PCA1 and PCA2 to df_customer. New shape: {df_customer.shape}")
 
 # Step 4: Save embedding for clustering
-embedding.to_pickle('umap_embedding.pkl')
-print("UMAP embedding saved to 'umap_embedding.pkl'")
+embedding.to_pickle('pca_embedding.pkl')
+print("PCA embedding saved to 'pca_embedding.pkl'")
 
-# Optional: Visualize UMAP embedding (requires matplotlib)
+# Optional: Visualize PCA embedding (requires matplotlib)
 try:
     import matplotlib.pyplot as plt
     plt.figure(figsize=(10, 6))
-    plt.scatter(embedding['UMAP1'], embedding['UMAP2'], s=1, alpha=0.5)
-    plt.title('UMAP Embedding of Customers')
-    plt.xlabel('UMAP1')
-    plt.ylabel('UMAP2')
-    plt.savefig('umap_visualization.png')
+    plt.scatter(embedding['PCA1'], embedding['PCA2'], s=1, alpha=0.5)
+    plt.title('PCA Embedding of Customers')
+    plt.xlabel('PCA1')
+    plt.ylabel('PCA2')
+    plt.savefig('pca_visualization.png')
     plt.close()
-    print("UMAP visualization saved to 'umap_visualization.png'")
+    print("PCA visualization saved to 'pca_visualization.png'")
 except ImportError:
     print("Matplotlib not installed. Skipping visualization.")
