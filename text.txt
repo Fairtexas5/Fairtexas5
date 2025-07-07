@@ -1,73 +1,82 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
-from sklearn.decomposition import KernelPCA
-from sklearn.compose import ColumnTransformer
+from sklearn.metrics import silhouette_score
+import hdbscan
 import warnings
-warnings.filterwarnings('ignore', category=UserWarning)  # Suppress warnings
+warnings.filterwarnings('ignore', category=UserWarning)
 
-# Step 1: Data Preparation
-print("Step 1: Preparing data for Kernel PCA...")
+# Step 1: Load Embedding
+print("Step 1: Loading TruncatedSVD embedding...")
+try:
+    embedding = pd.read_pickle('svd_embedding_with_categorical.pkl')
+    print(f"Loaded embedding from 'svd_embedding_with_categorical.pkl': Shape = {embedding.shape}")
+except FileNotFoundError:
+    if 'SVD1' in df_customer.columns and 'SVD2' in df_customer.columns:
+        embedding = df_customer[['SVD1', 'SVD2']].astype('float32')
+        print(f"Using SVD1 and SVD2 from df_customer: Shape = {embedding.shape}")
+    else:
+        raise ValueError("Embedding not found. Ensure 'svd_embedding_with_categorical.pkl' or 'SVD1', 'SVD2' in df_customer.")
 
-# Select numeric and categorical columns
-numeric_cols = df_customer.select_dtypes(include=['float64', 'int64']).columns
-categorical_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS']
-ordinal_cols = ['ACT_LVL']
-all_cols = list(numeric_cols) + categorical_cols + ordinal_cols
-print(f"Selected {len(numeric_cols)} numeric features: {list(numeric_cols)}")
-print(f"Selected {len(categorical_cols)} categorical features: {categorical_cols}")
-print(f"Selected {len(ordinal_cols)} ordinal feature: {ordinal_cols}")
-
-# Define preprocessing pipeline
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', StandardScaler(), numeric_cols),
-        ('cat', OneHotEncoder(sparse_output=False, handle_unknown='ignore'), categorical_cols),
-        ('ord', OrdinalEncoder(categories=[['Low', 'Medium', 'High', 'Very_High']]), ordinal_cols)
-    ],
-    remainder='drop'  # Drop CUST_NBR, date columns
+# Step 2: HDBSCAN Clustering
+print("Step 2: Running HDBSCAN clustering...")
+clusterer = hdbscan.HDBSCAN(
+    min_cluster_size=500,      # Minimum customers per segment
+    min_samples=10,            # Noise threshold
+    cluster_selection_method='eom',  # Excess of Mass for robust clusters
+    n_jobs=-1,                 # Use all 5 vCPUs
 )
+labels = clusterer.fit_predict(embedding)
+df_customer['Cluster'] = labels
+print(f"Clustering complete: {len(np.unique(labels))} clusters (including noise label -1)")
+print(f"Number of noise points: {(labels == -1).sum()}")
 
-# Apply preprocessing
-df_processed = preprocessor.fit_transform(df_customer[all_cols])
-# Get feature names for one-hot encoded columns
-cat_feature_names = preprocessor.named_transformers_['cat'].get_feature_names_out(categorical_cols)
-feature_names = list(numeric_cols) + list(cat_feature_names) + ordinal_cols
-df_processed = pd.DataFrame(df_processed, columns=feature_names, index=df_customer.index).astype('float32')
-print(f"Preprocessed data shape: {df_processed.shape} (includes {len(cat_feature_names)} one-hot encoded features)")
+# Step 3: Evaluation - Silhouette Score
+print("Step 3: Evaluating cluster quality...")
+sample_idx = np.random.choice(len(embedding), 10000, replace=False)
+silhouette = silhouette_score(embedding.iloc[sample_idx], labels[sample_idx])
+print(f"Silhouette Score (sample of 10,000): {silhouette:.4f}")
 
-# Step 2: Dimensionality Reduction with Kernel PCA
-print("Step 2: Running Kernel PCA dimensionality reduction...")
-kpca = KernelPCA(
-    n_components=2,      # Reduce to 2D
-    kernel='rbf',        # Non-linear RBF kernel
-    gamma=None,          # Auto: 1/n_features
-    n_jobs=-1,           # Use all 5 vCPUs
-    random_state=42      # Reproducibility
-)
-embedding = kpca.fit_transform(df_processed)
-embedding = pd.DataFrame(embedding, columns=['KPCA1', 'KPCA2'], index=df_customer.index).astype('float32')
-print(f"Kernel PCA reduction complete: Shape of embedding = {embedding.shape}")
+# Step 4: Cluster Summary for High-Value Segmentation
+print("Step 4: Summarizing clusters...")
+cluster_summary = df_customer.groupby('Cluster').agg({
+    'AVG_BAL_QTD': 'mean',       # Average quarterly balance
+    'TXN_FREQ': 'mean',          # Transaction frequency
+    'DIGITAL_ENGAGE': 'mean',    # Digital engagement
+    'TOTAL_PRODUCT': 'mean',     # Total products
+    'HIGHEST_TIER': lambda x: x.mode().iloc[0] if x.mode().size > 0 else 'Unknown',  # Most common tier
+    'CUST_NBR': 'count'          # Number of customers
+}).rename(columns={'CUST_NBR': 'Customer_Count'}).reset_index()
+print("\nCluster Summary:")
+print(cluster_summary)
 
-# Step 3: Add embedding to original DataFrame
-df_customer['KPCA1'] = embedding['KPCA1']
-df_customer['KPCA2'] = embedding['KPCA2']
-print(f"Added KPCA1 and KPCA2 to df_customer. New shape: {df_customer.shape}")
+# Identify high-value clusters
+high_value_clusters = cluster_summary[
+    (cluster_summary['AVG_BAL_QTD'] > cluster_summary['AVG_BAL_QTD'].median()) &
+    (cluster_summary['TXN_FREQ'] > cluster_summary['TXN_FREQ'].median()) &
+    (cluster_summary['DIGITAL_ENGAGE'] > cluster_summary['DIGITAL_ENGAGE'].median())
+]['Cluster'].tolist()
+print(f"\nHigh-Value Clusters: {high_value_clusters}")
 
-# Step 4: Save embedding for clustering
-embedding.to_pickle('kpca_embedding.pkl')
-print("Kernel PCA embedding saved to 'kpca_embedding.pkl'")
+# Step 5: Save Results
+df_customer.to_pickle('clustered_data.pkl')
+print("Clustered data saved to 'clustered_data.pkl'")
+cluster_summary.to_csv('cluster_summary.csv', index=False)
+print("Cluster summary saved to 'cluster_summary.csv'")
 
-# Optional: Visualize
+# Optional: Visualize Clusters
 try:
     import matplotlib.pyplot as plt
     plt.figure(figsize=(10, 6))
-    plt.scatter(embedding['KPCA1'], embedding['KPCA2'], s=1, alpha=0.5)
-    plt.title('Kernel PCA Embedding of Customers')
-    plt.xlabel('KPCA1')
-    plt.ylabel('KPCA2')
-    plt.savefig('kpca_visualization.png')
+    scatter = plt.scatter(
+        embedding['SVD1'], embedding['SVD2'], 
+        c=labels, cmap='Spectral', s=1, alpha=0.5
+    )
+    plt.colorbar(scatter, label='Cluster')
+    plt.title('HDBSCAN Clusters on TruncatedSVD Embedding')
+    plt.xlabel('SVD1')
+    plt.ylabel('SVD2')
+    plt.savefig('hdbscan_clustering.png')
     plt.close()
-    print("Kernel PCA visualization saved to 'kpca_visualization.png'")
+    print("Cluster visualization saved to 'hdbscan_clustering.png'")
 except ImportError:
     print("Matplotlib not installed. Skipping visualization.")
