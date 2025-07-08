@@ -1,82 +1,84 @@
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, MinMaxScaler
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.decomposition import KernelPCA
+from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-import hdbscan
-import warnings
-warnings.filterwarnings('ignore', category=UserWarning)
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Step 1: Load Embedding
-print("Step 1: Loading TruncatedSVD embedding...")
-try:
-    embedding = pd.read_pickle('svd_embedding_with_categorical.pkl')
-    print(f"Loaded embedding from 'svd_embedding_with_categorical.pkl': Shape = {embedding.shape}")
-except FileNotFoundError:
-    if 'SVD1' in df_customer.columns and 'SVD2' in df_customer.columns:
-        embedding = df_customer[['SVD1', 'SVD2']].astype('float32')
-        print(f"Using SVD1 and SVD2 from df_customer: Shape = {embedding.shape}")
-    else:
-        raise ValueError("Embedding not found. Ensure 'svd_embedding_with_categorical.pkl' or 'SVD1', 'SVD2' in df_customer.")
+# Assuming df_customer is your DataFrame loaded with the provided dataset
+# For this example, replace this with your actual data loading step
+# df_customer = pd.read_csv('your_data.csv')
 
-# Step 2: HDBSCAN Clustering
-print("Step 2: Running HDBSCAN clustering...")
-clusterer = hdbscan.HDBSCAN(
-    min_cluster_size=500,      # Minimum customers per segment
-    min_samples=10,            # Noise threshold
-    cluster_selection_method='eom',  # Excess of Mass for robust clusters
-    n_jobs=-1,                 # Use all 5 vCPUs
-)
-labels = clusterer.fit_predict(embedding)
-df_customer['Cluster'] = labels
-print(f"Clustering complete: {len(np.unique(labels))} clusters (including noise label -1)")
-print(f"Number of noise points: {(labels == -1).sum()}")
+# Step 1: Drop Unnecessary Features
+columns_to_drop = ['CUST_NBR', 'ACCT_OPN_DT', 'REPORT_DT', 'LST_CUST_CR_DT', 'LST_CUST_DR_DT']
+df_customer = df_customer.drop(columns=columns_to_drop, errors='ignore')
 
-# Step 3: Evaluation - Silhouette Score
-print("Step 3: Evaluating cluster quality...")
-sample_idx = np.random.choice(len(embedding), 10000, replace=False)
-silhouette = silhouette_score(embedding.iloc[sample_idx], labels[sample_idx])
-print(f"Silhouette Score (sample of 10,000): {silhouette:.4f}")
+# Drop low-variance features
+numeric_cols = df_customer.select_dtypes(include=[np.number]).columns
+selector = VarianceThreshold(threshold=0.01)
+selector.fit(df_customer[numeric_cols])
+low_variance_cols = numeric_cols[~selector.get_support()]
+df_customer = df_customer.drop(columns=low_variance_cols, errors='ignore')
+print(f"Dropped low-variance columns: {low_variance_cols.tolist()}")
 
-# Step 4: Cluster Summary for High-Value Segmentation
-print("Step 4: Summarizing clusters...")
-cluster_summary = df_customer.groupby('Cluster').agg({
-    'AVG_BAL_QTD': 'mean',       # Average quarterly balance
-    'TXN_FREQ': 'mean',          # Transaction frequency
-    'DIGITAL_ENGAGE': 'mean',    # Digital engagement
-    'TOTAL_PRODUCT': 'mean',     # Total products
-    'HIGHEST_TIER': lambda x: x.mode().iloc[0] if x.mode().size > 0 else 'Unknown',  # Most common tier
-    'CUST_NBR': 'count'          # Number of customers
-}).rename(columns={'CUST_NBR': 'Customer_Count'}).reset_index()
-print("\nCluster Summary:")
-print(cluster_summary)
+# Step 2: Encode Categorical Features
+nominal_features = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS']
+onehot = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+onehot_encoded = onehot.fit_transform(df_customer[nominal_features])
+onehot_df = pd.DataFrame(onehot_encoded, columns=onehot.get_feature_names_out(nominal_features), index=df_customer.index)
 
-# Identify high-value clusters
-high_value_clusters = cluster_summary[
-    (cluster_summary['AVG_BAL_QTD'] > cluster_summary['AVG_BAL_QTD'].median()) &
-    (cluster_summary['TXN_FREQ'] > cluster_summary['TXN_FREQ'].median()) &
-    (cluster_summary['DIGITAL_ENGAGE'] > cluster_summary['DIGITAL_ENGAGE'].median())
-]['Cluster'].tolist()
-print(f"\nHigh-Value Clusters: {high_value_clusters}")
+ordinal_feature = ['ACT_LVL']
+ordinal = OrdinalEncoder(categories=[['Low', 'Medium', 'High', 'Very_High']])
+ordinal_encoded = ordinal.fit_transform(df_customer[ordinal_feature])
+ordinal_df = pd.DataFrame(ordinal_encoded, columns=['ACT_LVL_ordinal'], index=df_customer.index)
 
-# Step 5: Save Results
-df_customer.to_pickle('clustered_data.pkl')
-print("Clustered data saved to 'clustered_data.pkl'")
-cluster_summary.to_csv('cluster_summary.csv', index=False)
-print("Cluster summary saved to 'cluster_summary.csv'")
+df_customer = df_customer.drop(columns=nominal_features + ordinal_feature)
+df_customer = pd.concat([df_customer, onehot_df, ordinal_df], axis=1)
 
-# Optional: Visualize Clusters
-try:
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(10, 6))
-    scatter = plt.scatter(
-        embedding['SVD1'], embedding['SVD2'], 
-        c=labels, cmap='Spectral', s=1, alpha=0.5
-    )
-    plt.colorbar(scatter, label='Cluster')
-    plt.title('HDBSCAN Clusters on TruncatedSVD Embedding')
-    plt.xlabel('SVD1')
-    plt.ylabel('SVD2')
-    plt.savefig('hdbscan_clustering.png')
-    plt.close()
-    print("Cluster visualization saved to 'hdbscan_clustering.png'")
-except ImportError:
-    print("Matplotlib not installed. Skipping visualization.")
+# Step 3: Normalize Features
+numeric_features = df_customer.select_dtypes(include=[np.number]).columns
+minmax_features = ['HV_AMT_RATIO', 'DIG_AMT_RATIO', 'NET_FLOW_RATIO', 'CR_TO_DR_RATIO', 'TXN_CNT_RATIO', 
+                   'PROD_DIVERSITY', 'LOAN_TO_INVEST', 'DIGI_TO_PHYS', 'SEC_LOAN_PREF']
+standard_features = [col for col in numeric_features if col not in minmax_features]
+
+scaler_standard = StandardScaler()
+scaled_standard = scaler_standard.fit_transform(df_customer[standard_features])
+scaled_standard_df = pd.DataFrame(scaled_standard, columns=standard_features, index=df_customer.index)
+
+scaler_minmax = MinMaxScaler()
+scaled_minmax = scaler_minmax.fit_transform(df_customer[minmax_features])
+scaled_minmax_df = pd.DataFrame(scaled_minmax, columns=minmax_features, index=df_customer.index)
+
+df_customer[standard_features] = scaled_standard_df
+df_customer[minmax_features] = scaled_minmax_df
+
+# Step 4: Dimensionality Reduction with Kernel PCA
+kpca = KernelPCA(kernel='rbf', n_components=10, n_jobs=-1)  # Use all 5 vCPUs
+X_kpca = kpca.fit_transform(df_customer[numeric_features])
+pca_df = pd.DataFrame(X_kpca, columns=[f'PC{i+1}' for i in range(10)], index=df_customer.index)
+
+# Step 5: Clustering with K-means
+kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
+clusters = kmeans.fit_predict(pca_df)
+df_customer['Cluster'] = clusters
+
+# Evaluate clustering
+sil_score = silhouette_score(pca_df, clusters)
+print(f"Silhouette Score: {sil_score}")
+
+# Step 6: Visualize and Interpret Clusters
+plt.figure(figsize=(10, 6))
+sns.scatterplot(x=pca_df['PC1'], y=pca_df['PC2'], hue=df_customer['Cluster'], palette='tab10')
+plt.title('Customer Segments in PCA Space')
+plt.show()
+
+# Summarize clusters
+cluster_summary = df_customer.groupby('Cluster').mean()
+print("Cluster Summary (Key Features):")
+print(cluster_summary[['AVG_BAL_QTD', 'TXN_FREQ', 'DIGITAL_ENGAGE', 'TOTAL_PRODUCT']])
+
+# Save results (optional)
+df_customer.to_csv('segmented_customers.csv', index=False)
