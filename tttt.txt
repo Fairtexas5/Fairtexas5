@@ -1,0 +1,117 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+import plotly.express as px
+import plotly.graph_objects as go
+from math import ceil
+
+# Assuming data is loaded into a DataFrame called 'df'
+# Replace this with your actual data loading method
+# df = pd.read_csv('your_data.csv')
+
+# For demonstration, we'll assume df is already loaded with the given structure
+# Define object columns for encoding
+object_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS']
+
+# Step 1: Outlier Clipping
+def clip_outliers(df, numeric_cols):
+    for col in numeric_cols:
+        q99 = df[col].quantile(0.99)
+        q98 = df[col].quantile(0.98)
+        max_val = df[col].max()
+        # Clip at 99th percentile if difference with max is not too large, else 98th
+        if (max_val - q99) / q99 < 0.5:  # Threshold for "not big difference"
+            df[col] = df[col].clip(upper=q99)
+        else:
+            df[col] = df[col].clip(upper=q98)
+    return df
+
+# Step 2: Encoding and Normalization
+def encode_and_normalize(df, object_cols):
+    le_dict = {}
+    for col in object_cols:
+        le = LabelEncoder()
+        df[col] = le.fit_transform(df[col].astype(str))
+        le_dict[col] = le
+    scaler = StandardScaler()
+    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+    return df, le_dict, scaler
+
+# Step 3: Dimensionality Reduction with PCA and t-SNE in Chunks
+def dimensionality_reduction(df, chunk_size=50000):
+    n_components = 2
+    n_samples = len(df)
+    n_chunks = ceil(n_samples / chunk_size)
+    
+    # Initialize arrays to store results
+    pca_results = np.zeros((n_samples, n_components))
+    tsne_results = np.zeros((n_samples, n_components))
+    
+    pca = PCA(n_components=n_components, random_state=42)
+    tsne = TSNE(n_components=n_components, random_state=42, n_jobs=-1)
+    
+    for i in range(n_chunks):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_samples)
+        chunk = df.iloc[start_idx:end_idx]
+        
+        # PCA
+        pca_results[start_idx:end_idx] = pca.fit_transform(chunk)
+        
+        # t-SNE (process smaller chunks to avoid memory issues)
+        tsne_chunk_size = min(chunk_size, 10000)  # Smaller chunks for t-SNE
+        n_subchunks = ceil(len(chunk) / tsne_chunk_size)
+        for j in range(n_subchunks):
+            sub_start = j * tsne_chunk_size
+            sub_end = min((j + 1) * tsne_chunk_size, len(chunk))
+            sub_chunk = chunk.iloc[sub_start:sub_end]
+            tsne_results[start_idx + sub_start:start_idx + sub_end] = tsne.fit_transform(sub_chunk)
+    
+    return pca_results, tsne_results
+
+# Step 4: Visualization with Plotly
+def plot_results(df, pca_results, tsne_results):
+    # Add results to DataFrame for plotting
+    df['PCA1'] = pca_results[:, 0]
+    df['PCA2'] = pca_results[:, 1]
+    df['TSNE1'] = tsne_results[:, 0]
+    df['TSNE2'] = tsne_results[:, 1]
+    
+    # PCA Plot
+    fig_pca = px.scatter(df, x='PCA1', y='PCA2', color='CUST_CLASS',
+                        title='PCA of Customer Data',
+                        labels={'PCA1': 'Principal Component 1', 'PCA2': 'Principal Component 2'})
+    
+    # t-SNE Plot
+    fig_tsne = px.scatter(df, x='TSNE1', y='TSNE2', color='CUST_CLASS',
+                         title='t-SNE of Customer Data',
+                         labels={'TSNE1': 't-SNE Component 1', 'TSNE2': 't-SNE Component 2'})
+    
+    # Show plots
+    fig_pca.show()
+    fig_tsne.show()
+
+# Main Execution
+def main(df):
+    # Identify numeric columns
+    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    
+    # Clip outliers
+    df = clip_outliers(df, numeric_cols)
+    
+    # Encode and normalize
+    df, le_dict, scaler = encode_and_normalize(df, object_cols)
+    
+    # Dimensionality reduction
+    pca_results, tsne_results = dimensionality_reduction(df)
+    
+    # Plot results
+    plot_results(df, pca_results, tsne_results)
+    
+    return df, le_dict, scaler
+
+# Example usage (uncomment and adjust as needed)
+# df, le_dict, scaler = main(df)
