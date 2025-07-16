@@ -1,5 +1,140 @@
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.manifold import TSNE
+import plotly.express as px
+from math import ceil
+
+# Assuming data is loaded into a DataFrame called 'df'
+# Replace this with your actual data loading method
+# df = pd.read_csv('your_data.csv')
+
+# Define object columns for encoding
+object_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS']
+
+# Step 1: Outlier Clipping
+def clip_outliers(df, numeric_cols):
+    for col in numeric_cols:
+        q99 = df[col].quantile(0.99)
+        q98 = df[col].quantile(0.98)
+        max_val = df[col].max()
+        # Clip at 99th percentile if difference with max is not too large, else 98th
+        if (max_val - q99) / q99 < 0.5:  # Threshold for "not big difference"
+            df[col] = df[col].clip(upper=q99)
+        else:
+            df[col] = df[col].clip(upper=q98)
+    return df
+
+# Step 2: Encoding and Normalization
+def encode_and_normalize(df, object_cols):
+    le_dict = {}
+    for col in object_cols:
+        le = LabelEncoder()
+        df[col] = le.fit_transform(df[col].astype(str))
+        le_dict[col] = le
+    scaler = StandardScaler()
+    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+    return df, le_dict, scaler
+
+# Step 3: 3D t-SNE in Chunks
+def tsne_3d(df, chunk_size=10000):
+    n_components = 3
+    n_samples = len(df)
+    n_chunks = ceil(n_samples / chunk_size)
+    
+    # Initialize array to store results
+    tsne_results = np.zeros((n_samples, n_components))
+    
+    # t-SNE with 3 components
+    tsne = TSNE(n_components=n_components, random_state=42, n_jobs=-1)
+    
+    for i in range(n_chunks):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, n_samples)
+        chunk = df.iloc[start_idx:end_idx]
+        tsne_results[start_idx:end_idx] = tsne.fit_transform(chunk)
+    
+    return tsne_results
+
+# Step 4: 3D Visualization with Plotly
+def plot_3d_tsne(df, tsne_results):
+    # Add t-SNE results to DataFrame
+    df['TSNE1'] = tsne_results[:, 0]
+    df['TSNE2'] = tsne_results[:, 1]
+    df['TSNE3'] = tsne_results[:, 2]
+    
+    # Create 3D scatter plot
+    fig = px.scatter_3d(
+        df,
+        x='TSNE1',
+        y='TSNE2',
+        z='TSNE3',
+        color='CUST_CLASS',
+        title='3D t-SNE of Customer Data',
+        labels={'TSNE1': 't-SNE Component 1', 'TSNE2': 't-SNE Component 2', 'TSNE3': 't-SNE Component 3'},
+        opacity=0.7,
+        size_max=10
+    )
+    
+    # Update layout for better visualization
+    fig.update_layout(
+        scene=dict(
+            xaxis_title='t-SNE Component 1',
+            yaxis_title='t-SNE Component 2',
+            zaxis_title='t-SNE Component 3'
+        ),
+        margin=dict(l=0, r=0, b=0, t=40)
+    )
+    
+    # Show plot
+    fig.show()
+
+# Main Execution
+def main(df):
+    # Identify numeric columns
+    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    
+    # Clip outliers
+    df = clip_outliers(df, numeric_cols)
+    
+    # Encode and normalize
+    df, le_dict, scaler = encode_and_normalize(df, object_cols)
+    
+    # Perform 3D t-SNE
+    tsne_results = tsne_3d(df)
+    
+    # Plot results
+    plot_3d_tsne(df, tsne_results)
+    
+    return df, le_dict, scaler
+
+# Example usage (uncomment and adjust as needed)
+# df, le_dict, scaler = main(df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_score
 import plotly.express as px
