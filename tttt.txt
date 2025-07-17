@@ -1,155 +1,28 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.manifold import TSNE
-import plotly.express as px
-from math import ceil
-
-# Assuming data is loaded into a DataFrame called 'df'
-# Replace this with your actual data loading method
-# df = pd.read_csv('your_data.csv')
-
-# Define object columns for encoding
-object_cols = ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'HIGHEST_TIER', 'MRTL_STS']
-
-# Step 1: Outlier Clipping
-def clip_outliers(df, numeric_cols):
-    for col in numeric_cols:
-        q99 = df[col].quantile(0.99)
-        q98 = df[col].quantile(0.98)
-        max_val = df[col].max()
-        # Clip at 99th percentile if difference with max is not too large, else 98th
-        if (max_val - q99) / q99 < 0.5:  # Threshold for "not big difference"
-            df[col] = df[col].clip(upper=q99)
-        else:
-            df[col] = df[col].clip(upper=q98)
-    return df
-
-# Step 2: Encoding and Normalization
-def encode_and_normalize(df, object_cols):
-    le_dict = {}
-    for col in object_cols:
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col].astype(str))
-        le_dict[col] = le
-    scaler = StandardScaler()
-    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
-    return df, le_dict, scaler
-
-# Step 3: 3D t-SNE in Chunks
-def tsne_3d(df, chunk_size=10000):
-    n_components = 3
-    n_samples = len(df)
-    n_chunks = ceil(n_samples / chunk_size)
-    
-    # Initialize array to store results
-    tsne_results = np.zeros((n_samples, n_components))
-    
-    # t-SNE with 3 components
-    tsne = TSNE(n_components=n_components, random_state=42, n_jobs=-1)
-    
-    for i in range(n_chunks):
-        start_idx = i * chunk_size
-        end_idx = min((i + 1) * chunk_size, n_samples)
-        chunk = df.iloc[start_idx:end_idx]
-        tsne_results[start_idx:end_idx] = tsne.fit_transform(chunk)
-    
-    return tsne_results
-
-# Step 4: 3D Visualization with Plotly
-def plot_3d_tsne(df, tsne_results):
-    # Add t-SNE results to DataFrame
-    df['TSNE1'] = tsne_results[:, 0]
-    df['TSNE2'] = tsne_results[:, 1]
-    df['TSNE3'] = tsne_results[:, 2]
-    
-    # Create 3D scatter plot
-    fig = px.scatter_3d(
-        df,
-        x='TSNE1',
-        y='TSNE2',
-        z='TSNE3',
-        color='CUST_CLASS',
-        title='3D t-SNE of Customer Data',
-        labels={'TSNE1': 't-SNE Component 1', 'TSNE2': 't-SNE Component 2', 'TSNE3': 't-SNE Component 3'},
-        opacity=0.7,
-        size_max=10
-    )
-    
-    # Update layout for better visualization
-    fig.update_layout(
-        scene=dict(
-            xaxis_title='t-SNE Component 1',
-            yaxis_title='t-SNE Component 2',
-            zaxis_title='t-SNE Component 3'
-        ),
-        margin=dict(l=0, r=0, b=0, t=40)
-    )
-    
-    # Show plot
-    fig.show()
-
-# Main Execution
-def main(df):
-    # Identify numeric columns
-    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    
-    # Clip outliers
-    df = clip_outliers(df, numeric_cols)
-    
-    # Encode and normalize
-    df, le_dict, scaler = encode_and_normalize(df, object_cols)
-    
-    # Perform 3D t-SNE
-    tsne_results = tsne_3d(df)
-    
-    # Plot results
-    plot_3d_tsne(df, tsne_results)
-    
-    return df, le_dict, scaler
-
-# Example usage (uncomment and adjust as needed)
-# df, le_dict, scaler = main(df)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-import pandas as pd
-import numpy as np
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
 import plotly.express as px
 import plotly.graph_objects as go
-from math import ceil
 
-# Assuming df contains TSNE1 and TSNE2 from previous t-SNE results
-# Replace this with your actual DataFrame
-# df = pd.read_csv('your_data.csv')  # Load your data if needed
+# Assuming df contains TSNE1, TSNE2, and original features
+# Replace with your actual DataFrame
+# df = pd.read_csv('your_data.csv')
 
-# Extract t-SNE results for clustering
-X_tsne = df[['TSNE1', 'TSNE2']].values
+# Step 1: Prepare Data (Combine t-SNE and Key Features)
+def prepare_data(df):
+    key_features = ['TSNE1', 'TSNE2', 'AQB', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE', 
+                    'PRODUCT_SCORE', 'TENURE_DAYS', 'HOME_LOAN_AMT']
+    X = df[key_features].copy()
+    
+    # Re-normalize features to ensure consistency
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+    return X, key_features
 
-# Step 1: K-Means Clustering with Elbow Method and Silhouette Score
-def kmeans_clustering(X, max_k=10):
+# Step 2: K-Means Clustering with Extended k Range and Validation
+def kmeans_clustering(X, max_k=15):
     inertia = []
     silhouette_scores = []
     k_range = range(2, max_k + 1)
@@ -158,11 +31,8 @@ def kmeans_clustering(X, max_k=10):
         kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
         labels = kmeans.fit_predict(X)
         inertia.append(kmeans.inertia_)
-        if k > 1:  # Silhouette score requires at least 2 clusters
-            score = silhouette_score(X, labels, sample_size=10000, random_state=42)
-            silhouette_scores.append(score)
-        else:
-            silhouette_scores.append(0)
+        score = silhouette_score(X, labels, sample_size=10000, random_state=42)
+        silhouette_scores.append(score)
     
     # Plot Elbow Curve
     fig_elbow = go.Figure()
@@ -181,71 +51,74 @@ def kmeans_clustering(X, max_k=10):
     kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
     labels = kmeans.fit_predict(X)
     
-    return labels, optimal_k
-
-# Step 2: DBSCAN Clustering
-def dbscan_clustering(X, eps_values=[0.5, 1.0, 1.5], min_samples=5):
-    best_score = -1
-    best_labels = None
-    best_eps = None
-    
-    for eps in eps_values:
-        dbscan = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=-1)
-        labels = dbscan.fit_predict(X)
-        # Check if there are at least 2 clusters (excluding noise)
-        if len(np.unique(labels[labels != -1])) > 1:
-            score = silhouette_score(X, labels, sample_size=10000, random_state=42)
-            if score > best_score:
-                best_score = score
-                best_labels = labels
-                best_eps = eps
-    
-    print(f"Best DBSCAN eps: {best_eps}, Silhouette Score: {best_score}")
-    return best_labels
+    print(f"Optimal k: {optimal_k}, Silhouette Score: {max(silhouette_scores):.3f}")
+    return labels, optimal_k, inertia
 
 # Step 3: Visualize Clusters
-def plot_clusters(df, X_tsne, kmeans_labels, dbscan_labels, optimal_k):
-    df['KMeans_Cluster'] = kmeans_labels
-    df['DBSCAN_Cluster'] = dbscan_labels
+def plot_clusters(df, X, labels, optimal_k, key_features):
+    df['KMeans_Cluster'] = labels
     
-    # K-Means Plot
-    fig_kmeans = px.scatter(df, x='TSNE1', y='TSNE2', color='KMeans_Cluster',
-                           title=f'K-Means Clustering (k={optimal_k})',
-                           labels={'TSNE1': 't-SNE Component 1', 'TSNE2': 't-SNE Component 2'})
-    fig_kmeans.show()
+    # Scatter plot colored by cluster
+    fig = px.scatter(df, x='TSNE1', y='TSNE2', color='KMeans_Cluster',
+                     title=f'K-Means Clustering (k={optimal_k})',
+                     labels={'TSNE1': 't-SNE Component 1', 'TSNE2': 't-SNE Component 2'})
+    fig.show()
     
-    # DBSCAN Plot
-    fig_dbscan = px.scatter(df, x='TSNE1', y='TSNE2', color='DBSCAN_Cluster',
-                           title='DBSCAN Clustering',
-                           labels={'TSNE1': 't-SNE Component 1', 'TSNE2': 't-SNE Component 2'})
-    fig_dbscan.show()
+    # Within-cluster variance
+    kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+    kmeans.fit(X)
+    print(f"Within-cluster sum of squares (Inertia): {kmeans.inertia_:.2f}")
 
 # Step 4: Interpret Clusters
-def interpret_clusters(df, labels, cluster_type='KMeans'):
-    df[f'{cluster_type}_Cluster'] = labels
-    # Group by cluster and compute mean for key features
-    key_features = ['AQB', 'HOME_LOAN_AMT', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE', 'PRODUCT_SCORE', 'TENURE_DAYS']
-    cluster_summary = df.groupby(f'{cluster_type}_Cluster')[key_features].mean()
-    print(f"{cluster_type} Cluster Summary:")
+def interpret_clusters(df, labels, key_features):
+    df['KMeans_Cluster'] = labels
+    cluster_summary = df.groupby('KMeans_Cluster')[key_features].mean()
+    cluster_sizes = df['KMeans_Cluster'].value_counts().sort_index()
+    print("\nCluster Summary (Mean Values):")
     print(cluster_summary)
-    return cluster_summary
+    print("\nCluster Sizes:")
+    print(cluster_sizes)
+    
+    # Additional business-relevant insights
+    high_value_clusters = cluster_summary[cluster_summary['AQB'] > cluster_summary['AQB'].mean()]
+    print("\nHigh-Value Clusters (Above Average AQB):")
+    print(high_value_clusters[['AQB', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE']])
+    
+    return cluster_summary, cluster_sizes
 
 # Main Execution
-def main(df, X_tsne):
-    # K-Means Clustering
-    kmeans_labels, optimal_k = kmeans_clustering(X_tsne)
+def main(df):
+    # Prepare data
+    X, key_features = prepare_data(df)
     
-    # DBSCAN Clustering
-    dbscan_labels = dbscan_clustering(X_tsne)
+    # Perform K-Means clustering
+    kmeans_labels, optimal_k, inertia = kmeans_clustering(X)
     
-    # Visualize Clusters
-    plot_clusters(df, X_tsne, kmeans_labels, dbscan_labels, optimal_k)
+    # Visualize clusters
+    plot_clusters(df, X, kmeans_labels, optimal_k, key_features)
     
-    # Interpret Clusters
-    kmeans_summary = interpret_clusters(df, kmeans_labels, 'KMeans')
-    dbscan_summary = interpret_clusters(df, dbscan_labels, 'DBSCAN')
+    # Interpret clusters
+    cluster_summary, cluster_sizes = interpret_clusters(df, kmeans_labels, key_features)
     
-    return df, kmeans_labels, dbscan_labels
+    return df, kmeans_labels, cluster_summary
 
 # Example usage
-# df, kmeans_labels, dbscan_labels = main(df, X_tsne)
+# df, kmeans_labels, cluster_summary = main(df)
+
+
+
+from sklearn.neighbors import NearestNeighbors
+import plotly.graph_objects as go
+
+def k_distance_plot(X, k=5):
+    nbrs = NearestNeighbors(n_neighbors=k).fit(X)
+    distances, _ = nbrs.kneighbors(X)
+    distances = np.sort(distances[:, k-1], axis=0)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=np.arange(len(distances)), y=distances, mode='lines'))
+    fig.update_layout(title=f'{k}-Distance Plot for DBSCAN', xaxis_title='Points (sorted)', yaxis_title=f'Distance to {k}th Neighbor')
+    fig.show()
+
+# Run on a sample to save memory
+sample_X = df[['TSNE1', 'TSNE2']].sample(10000, random_state=42).values
+k_distance_plot(sample_X)
