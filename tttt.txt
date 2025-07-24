@@ -1,35 +1,347 @@
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import pairwise_distances
+from sklearn.utils import resample
+from scipy.spatial.distance import pdist, squareform
+import warnings
+warnings.filterwarnings('ignore')
+
+def unsupervised_rf_importance(df, n_estimators=200, sample_size=50000, n_permutations=5):
+    """
+    Compute feature importance using unsupervised Random Forest proximity matrix
+    """
+    print(f"Original data shape: {df.shape}")
+    
+    # Step 1: Sample data for computational efficiency (stratified by cluster)
+    if df.shape[0] > sample_size:
+        df_sample = df.groupby('cluster_labels').apply(
+            lambda x: x.sample(min(len(x), sample_size // 6), random_state=42)
+        ).reset_index(drop=True)
+    else:
+        df_sample = df.copy()
+    
+    features = [col for col in df_sample.columns if col != 'cluster_labels']
+    X_sample = df_sample[features].values
+    
+    print(f"Sample data shape: {X_sample.shape}")
+    
+    # Step 2: Train unsupervised Random Forest using synthetic binary splits
+    # Create synthetic target by splitting data randomly (unsupervised approach)
+    np.random.seed(42)
+    synthetic_target = np.random.randint(0, 2, len(X_sample))
+    
+    rf = RandomForestClassifier(
+        n_estimators=n_estimators,
+        max_depth=10,
+        min_samples_split=20,
+        min_samples_leaf=10,
+        random_state=42,
+        n_jobs=-1
+    )
+    
+    rf.fit(X_sample, synthetic_target)
+    
+    # Step 3: Extract proximity matrix
+    def compute_proximity_matrix(rf, X):
+        """Compute proximity matrix from Random Forest"""
+        n_samples = X.shape[0]
+        proximity = np.zeros((n_samples, n_samples))
+        
+        for tree in rf.estimators_:
+            # Get leaf indices for each sample
+            leaf_indices = tree.apply(X)
+            
+            # Samples in same leaf have proximity = 1, else 0
+            for i in range(n_samples):
+                for j in range(i, n_samples):
+                    if leaf_indices[i] == leaf_indices[j]:
+                        proximity[i, j] += 1
+                        proximity[j, i] += 1
+        
+        # Normalize by number of trees
+        proximity = proximity / n_estimators
+        return proximity
+    
+    print("Computing baseline proximity matrix...")
+    baseline_proximity = compute_proximity_matrix(rf, X_sample)
+    baseline_avg_proximity = np.mean(baseline_proximity[np.triu_indices_from(baseline_proximity, k=1)])
+    
+    # Step 4: Permutation importance
+    feature_importance = {}
+    
+    for i, feature in enumerate(features):
+        proximities_permuted = []
+        
+        for perm in range(n_permutations):
+            # Permute feature i
+            X_perm = X_sample.copy()
+            np.random.seed(42 + perm)
+            X_perm[:, i] = np.random.permutation(X_perm[:, i])
+            
+            # Retrain RF with permuted feature
+            rf_perm = RandomForestClassifier(
+                n_estimators=n_estimators,
+                max_depth=10,
+                min_samples_split=20,
+                min_samples_leaf=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            rf_perm.fit(X_perm, synthetic_target)
+            
+            # Compute proximity with permuted feature
+            perm_proximity = compute_proximity_matrix(rf_perm, X_perm)
+            avg_perm_proximity = np.mean(perm_proximity[np.triu_indices_from(perm_proximity, k=1)])
+            proximities_permuted.append(avg_perm_proximity)
+        
+        # Importance = drop in average proximity
+        avg_drop = baseline_avg_proximity - np.mean(proximities_permuted)
+        feature_importance[feature] = avg_drop
+        
+        print(f"Feature {i+1}/{len(features)}: {feature} = {avg_drop:.6f}")
+    
+    return pd.Series(feature_importance).sort_values(ascending=False)
+
+# Usage
+df_with_labels = df.copy()
+df_with_labels['cluster_labels'] = kmeans.labels_
+
+importance_rf = unsupervised_rf_importance(df_with_labels)
+print("\nTop 10 Most Important Features (Unsupervised RF):")
+print(importance_rf.head(10))
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
 import pandas as pd
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import adjusted_rand_score
+import matplotlib.pyplot as plt
 
-# Assuming df is your original dataframe and kmeans_labels is the cluster labels
-# Encode categorical features (example with one-hot encoding)
-df_encoded = pd.get_dummies(df, columns=['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG', 'MRTL_STS', 'ACT_LVL'])
+class SparseKMeans:
+    """
+    Implementation of Sparse K-Means (Witten & Tibshirani, 2010)
+    """
+    
+    def __init__(self, n_clusters, sparsity_param=None, max_iter=100, tol=1e-4, random_state=42):
+        self.n_clusters = n_clusters
+        self.sparsity_param = sparsity_param
+        self.max_iter = max_iter
+        self.tol = tol
+        self.random_state = random_state
+        self.feature_weights_ = None
+        self.cluster_centers_ = None
+        self.labels_ = None
+        
+    def _soft_threshold(self, x, threshold):
+        """Soft thresholding operator for L1 penalty"""
+        return np.sign(x) * np.maximum(np.abs(x) - threshold, 0)
+    
+    def _compute_wcss_per_feature(self, X, labels, centers):
+        """Compute within-cluster sum of squares for each feature"""
+        n_features = X.shape[1]
+        wcss = np.zeros(n_features)
+        
+        for k in range(self.n_clusters):
+            mask = (labels == k)
+            if np.sum(mask) > 0:
+                diff = X[mask] - centers[k]
+                wcss += np.sum(diff**2, axis=0)
+        
+        return wcss
+    
+    def _compute_bcss_per_feature(self, X, labels, centers):
+        """Compute between-cluster sum of squares for each feature"""
+        n_features = X.shape[1]
+        overall_mean = np.mean(X, axis=0)
+        bcss = np.zeros(n_features)
+        
+        for k in range(self.n_clusters):
+            mask = (labels == k)
+            n_k = np.sum(mask)
+            if n_k > 0:
+                diff = centers[k] - overall_mean
+                bcss += n_k * (diff**2)
+        
+        return bcss
+    
+    def fit(self, X):
+        """Fit Sparse K-Means"""
+        np.random.seed(self.random_state)
+        n_samples, n_features = X.shape
+        
+        # Initialize with regular K-means
+        kmeans_init = KMeans(n_clusters=self.n_clusters, random_state=self.random_state)
+        labels = kmeans_init.fit_predict(X)
+        
+        # Initialize feature weights uniformly
+        weights = np.ones(n_features) / np.sqrt(n_features)
+        
+        # Auto-tune sparsity parameter if not provided
+        if self.sparsity_param is None:
+            self.sparsity_param = self._tune_sparsity_parameter(X)
+        
+        for iteration in range(self.max_iter):
+            # Step 1: Update cluster assignments with weighted features
+            weighted_X = X * weights[np.newaxis, :]
+            
+            # Compute weighted centroids
+            centers = np.zeros((self.n_clusters, n_features))
+            for k in range(self.n_clusters):
+                mask = (labels == k)
+                if np.sum(mask) > 0:
+                    centers[k] = np.mean(weighted_X[mask], axis=0)
+            
+            # Assign points to closest weighted centroid
+            distances = np.zeros((n_samples, self.n_clusters))
+            for k in range(self.n_clusters):
+                distances[:, k] = np.sum((weighted_X - centers[k])**2, axis=1)
+            
+            new_labels = np.argmin(distances, axis=1)
+            
+            # Step 2: Update feature weights
+            # Compute BCSS for each feature
+            bcss = self._compute_bcss_per_feature(X, new_labels, centers / weights[np.newaxis, :])
+            
+            # Update weights with soft thresholding
+            new_weights = self._soft_threshold(bcss, self.sparsity_param)
+            
+            # Normalize weights
+            weight_norm = np.sqrt(np.sum(new_weights**2))
+            if weight_norm > 0:
+                new_weights = new_weights / weight_norm
+            else:
+                new_weights = np.ones(n_features) / np.sqrt(n_features)
+            
+            # Check convergence
+            weight_change = np.sqrt(np.sum((weights - new_weights)**2))
+            label_change = np.mean(labels != new_labels)
+            
+            if weight_change < self.tol and label_change < self.tol:
+                print(f"Converged after {iteration + 1} iterations")
+                break
+            
+            weights = new_weights
+            labels = new_labels
+            
+        # Store results
+        self.feature_weights_ = weights
+        self.labels_ = labels
+        
+        # Compute final centroids
+        self.cluster_centers_ = np.zeros((self.n_clusters, n_features))
+        for k in range(self.n_clusters):
+            mask = (labels == k)
+            if np.sum(mask) > 0:
+                self.cluster_centers_[k] = np.mean(X[mask], axis=0)
+        
+        return self
+    
+    def _tune_sparsity_parameter(self, X, sparsity_range=None):
+        """Tune sparsity parameter using gap statistic"""
+        if sparsity_range is None:
+            sparsity_range = np.logspace(-3, 1, 10)
+        
+        print("Tuning sparsity parameter...")
+        best_sparsity = sparsity_range[0]
+        
+        # Simple heuristic: choose sparsity that gives ~20% non-zero weights
+        target_sparsity = 0.2 * X.shape[1]
+        
+        for s in sparsity_range:
+            # Quick test fit
+            temp_kmeans = SparseKMeans(
+                n_clusters=self.n_clusters, 
+                sparsity_param=s, 
+                max_iter=20,
+                random_state=self.random_state
+            )
+            temp_kmeans.fit(X[:10000])  # Use subset for speed
+            
+            n_nonzero = np.sum(temp_kmeans.feature_weights_ > 1e-6)
+            if n_nonzero <= target_sparsity:
+                best_sparsity = s
+                break
+        
+        print(f"Selected sparsity parameter: {best_sparsity}")
+        return best_sparsity
 
-# Train Random Forest to predict cluster labels
-rf = RandomForestClassifier(random_state=42)
-rf.fit(df_encoded, kmeans_labels)
+def sparse_kmeans_importance(df, n_clusters=6, sparsity_params=None):
+    """
+    Apply Sparse K-Means and extract feature importance
+    """
+    # Standardize features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(df.values)
+    
+    # Sample for computational efficiency
+    if X_scaled.shape[0] > 100000:
+        sample_idx = np.random.choice(X_scaled.shape[0], 100000, replace=False)
+        X_sample = X_scaled[sample_idx]
+        print(f"Sampled {len(sample_idx)} rows for sparse K-means")
+    else:
+        X_sample = X_scaled
+    
+    # If sparsity parameters not provided, test several values
+    if sparsity_params is None:
+        sparsity_params = [0.1, 0.5, 1.0, 2.0, 5.0]
+    
+    results = {}
+    
+    for sparsity in sparsity_params:
+        print(f"\nFitting Sparse K-Means with sparsity = {sparsity}")
+        
+        sparse_kmeans = SparseKMeans(
+            n_clusters=n_clusters,
+            sparsity_param=sparsity,
+            max_iter=50,
+            random_state=42
+        )
+        
+        sparse_kmeans.fit(X_sample)
+        
+        # Extract feature weights as importance scores
+        importance = pd.Series(sparse_kmeans.feature_weights_, index=df.columns)
+        results[sparsity] = {
+            'importance': importance.sort_values(ascending=False),
+            'n_selected': np.sum(sparse_kmeans.feature_weights_ > 1e-6),
+            'model': sparse_kmeans
+        }
+        
+        print(f"Number of selected features: {results[sparsity]['n_selected']}")
+        print(f"Top 5 features: {list(results[sparsity]['importance'].head().index)}")
+    
+    return results
 
-# Get feature importances
-importances = pd.DataFrame({
-    'Feature': df_encoded.columns,
-    'Importance': rf.feature_importances_
-}).sort_values(by='Importance', ascending=False)
+# Usage
+print("Computing Sparse K-Means importance...")
+sparse_results = sparse_kmeans_importance(df, n_clusters=6)
 
-print(importances)
+# Display results
+print("\n" + "="*60)
+print("SPARSE K-MEANS RESULTS")
+print("="*60)
 
+for sparsity, result in sparse_results.items():
+    print(f"\nSparsity Parameter: {sparsity}")
+    print(f"Features Selected: {result['n_selected']}/{len(df.columns)}")
+    print("Top 10 Important Features:")
+    print(result['importance'].head(10))
+    print("-" * 40)
 
-from sklearn.feature_selection import f_classif
-import pandas as pd
-
-# Select numeric features
-numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-X_numeric = df[numeric_cols]
-
-# Compute ANOVA F-scores
-f_scores, p_values = f_classif(X_numeric, kmeans_labels)
-f_scores_df = pd.DataFrame({
-    'Feature': numeric_cols,
-    'F_Score': f_scores
-}).sort_values(by='F_Score', ascending=False)
-
-print(f_scores_df)
+# Recommend best sparsity based on business needs
+print("\nRecommendation:")
+print("Choose sparsity based on desired number of features:")
+for sparsity, result in sparse_results.items():
+    print(f"  Sparsity {sparsity}: {result['n_selected']} features")
