@@ -1,106 +1,78 @@
-import pandas as pd
-import numpy as np
-from scipy.stats import zscore, f_oneway
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
-import matplotlib.pyplot as plt
-
-########################################
-# 1. Attach cluster labels
-########################################
-df['cluster'] = kmeans.labels_
-
-########################################
-# 2. Winsorise & Z-scale numeric vars
-########################################
-num_cols = df.select_dtypes(include=['float64', 'int64']).columns
-df[num_cols] = df[num_cols].apply(
-    lambda col: np.clip(col, col.quantile(0.005), col.quantile(0.995))
-)
-df[num_cols] = df[num_cols].apply(zscore)
-
-########################################
-# 3. Build grouped composite metrics
-########################################
-group_map = {
-    'balance': ['AQB', 'TOTAL_HV_AMT', 'BAL_UTIL'],
-    'product': ['TOTAL_PRODUCT_EXCL_SERVICES', 'PRODUCT_SCORE', 'CROSS_SELL_SUCCESS'],
-    'transaction': ['TXN_FREQ', 'AVG_TXN_VALUE', 'TRANSACTION_SCORE'],
-    'digital': ['DIGITAL_ENGAGE', 'TOTAL_DIG_CNT', 'DIGI_TO_PHYS'],
-    'risk': ['DORM_RISK', 'SEV_DORM_RISK', 'TXN_CONSISTENCY']
+feature_groups = {
+    'Balance': ['AQB', 'TOTAL_HV_AMT', 'BAL_UTIL'],
+    'Product': ['TOTAL_PRODUCT_EXCL_SERVICES', 'PRODUCT_SCORE', 'CROSS_SELL_SUCCESS'],
+    'Transaction': ['TXN_FREQ', 'AVG_TXN_VALUE', 'TRANSACTION_SCORE'],
+    'Digital': ['DIGITAL_ENGAGE', 'TOTAL_DIG_CNT', 'DIGI_TO_PHYS'],
+    'Risk': ['DORM_RISK', 'SEV_DORM_RISK', 'TXN_CONSISTENCY']
 }
 
-for g, cols in group_map.items():
-    df[f'{g}_score'] = df[cols].mean(axis=1)
 
-# Composite HVC Score
-df['HVC_Score'] = (0.30*df['balance_score'] +
-                   0.25*df['product_score'] +
-                   0.20*df['transaction_score'] +
-                   0.15*df['digital_score'] -
-                   0.10*df['risk_score'])
+import pandas as pd
 
-########################################
-# 4. Aggregate by cluster
-########################################
-agg = df.groupby('cluster').agg(
-    customers=('HVC_Score', 'size'),
-    mean_HVC=('HVC_Score', 'mean'),
-    median_AQB=('AQB', 'median'),
-    avg_products=('TOTAL_PRODUCT_EXCL_SERVICES', 'mean'),
-    digital_pct=('digital_score', lambda x: (x>0).mean()),  # >0 ≈ above-avg digital
-    dorm_risk_pct=('risk_score', lambda x: (x>0).mean()),
+agg_entries = []
+for cluster_id, group in df.groupby('cluster'):
+    record = {
+        "Cluster": cluster_id,
+        'Customers': len(group)
+    }
+    for group_name, cols in feature_groups.items():
+        record[group_name] = group[cols].mean().mean()  # mean across all group features
+    # Add any custom or advanced metrics you wish
+    record['Mean_HVC_Score'] = group['HVC_Score'].mean() if 'HVC_Score' in group else None
+    record['Median_AQB'] = group['AQB'].median()
+    record['Avg_Prod_Count'] = group['TOTAL_PRODUCT_EXCL_SERVICES'].mean()
+    record['Avg_Txn_Score'] = group['TRANSACTION_SCORE'].mean()
+    record['Avg_Digital_Score'] = group['DIGITAL_ENGAGE'].mean()
+    record['Dormancy_Risk_%'] = 100 * (group['DORM_RISK'] > 0).mean()
+    # Portfolio value share (customizable; example: weighted HVC score or AQB)
+    record['Portfolio_Value_Share'] = group['AQB'].sum()
+    agg_entries.append(record)
+
+summary_table = pd.DataFrame(agg_entries)
+summary_table['Portfolio_Value_Share'] /= summary_table['Portfolio_Value_Share'].sum()  # Normalize to %
+summary_table['Portfolio_Value_Share'] *= 100
+summary_table = summary_table.sort_values('Mean_HVC_Score', ascending=False)
+
+
+pd.set_option('display.float_format', lambda x: f'{x:,.2f}')
+display_cols = [
+    "Cluster", "Customers", "Mean_HVC_Score", "Median_AQB", "Avg_Prod_Count",
+    "Avg_Txn_Score", "Avg_Digital_Score", "Dormancy_Risk_%", "Portfolio_Value_Share"
+]
+print(summary_table[display_cols])
+
+
+summary_table["High_Value_Product_Ratio"] = (
+    summary_table["Avg_Prod_Count"] > threshold_value  # set your bank's high-value threshold
 )
 
-# Portfolio share
-agg['portfolio_value_share'] = agg['customers'] * agg['mean_HVC']
-agg['portfolio_value_share'] /= agg['portfolio_value_share'].sum()
 
-print(agg.round(3))
+import plotly.graph_objects as go
 
-########################################
-# 5. Statistical tests
-########################################
-clusters = df['cluster'].unique()
-samples = [df.loc[df.cluster==c, 'HVC_Score'] for c in clusters]
-f_stat, p_val = f_oneway(*samples)
-print(f'ANOVA F={f_stat:.2f}, p={p_val:.4e}')
+group_names = list(feature_groups.keys())
+normalized = summary_table[group_names].copy()
+for name in group_names:
+    min_val = normalized[name].min()
+    max_val = normalized[name].max()
+    normalized[name] = (normalized[name] - min_val) / (max_val - min_val)
 
-# Tukey HSD
-tukey = pairwise_tukeyhsd(endog=df['HVC_Score'], groups=df['cluster'], alpha=0.05)
-print(tukey.summary())
+# Prepare traces for each cluster
+def radar_trace(row):
+    values = [row[gn] for gn in group_names]
+    values += values[:1]  # closed loop
+    return go.Scatterpolar(
+        r=values,
+        theta=group_names + [group_names[0]],
+        fill='toself',
+        name=f'Cluster {row["Cluster"]}'
+    )
 
-########################################
-# 6. Radar chart
-########################################
-import seaborn as sns
-from math import pi
+fig = go.Figure([radar_trace(row) for _, row in normalized.iterrows()])
+fig.update_layout(
+    polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+    title="HVC Driver Profile by Cluster",
+    showlegend=True
+)
+fig.show()
 
-# Normalise group means 0-1
-group_means = df.groupby('cluster')[list(group_map.keys())].mean()
-group_means = (group_means - group_means.min())/(group_means.max()-group_means.min())
 
-categories = list(group_map.keys())
-N = len(categories)
-
-angles = [n / float(N) * 2 * pi for n in range(N)]
-angles += angles[:1]
-
-fig=plt.figure(figsize=(8,8))
-ax = plt.subplot(111, polar=True)
-
-for i, row in group_means.iterrows():
-    values=row.tolist()
-    values+=values[:1]
-    ax.plot(angles, values,
-            linewidth=2,
-            linestyle='solid',
-            label=f'Cluster {i}',
-            alpha=0.4 if row.name!=group_means.mean(axis=1).idxmax() else 1.0)
-    ax.fill(angles, values, alpha=0.1)
-
-plt.xticks(angles[:-1], categories, size=12)
-plt.yticks([0.25,0.5,0.75,1.0], ["25%","50%","75%","100%"], color="grey", size=10)
-plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
-plt.title('High-Value Driver Profile by Cluster', y=1.08)
-plt.tight_layout()
-plt.show()
