@@ -1,78 +1,51 @@
-feature_groups = {
-    'Balance': ['AQB', 'TOTAL_HV_AMT', 'BAL_UTIL'],
-    'Product': ['TOTAL_PRODUCT_EXCL_SERVICES', 'PRODUCT_SCORE', 'CROSS_SELL_SUCCESS'],
-    'Transaction': ['TXN_FREQ', 'AVG_TXN_VALUE', 'TRANSACTION_SCORE'],
-    'Digital': ['DIGITAL_ENGAGE', 'TOTAL_DIG_CNT', 'DIGI_TO_PHYS'],
-    'Risk': ['DORM_RISK', 'SEV_DORM_RISK', 'TXN_CONSISTENCY']
-}
-
-
 import pandas as pd
-
-agg_entries = []
-for cluster_id, group in df.groupby('cluster'):
-    record = {
-        "Cluster": cluster_id,
-        'Customers': len(group)
-    }
-    for group_name, cols in feature_groups.items():
-        record[group_name] = group[cols].mean().mean()  # mean across all group features
-    # Add any custom or advanced metrics you wish
-    record['Mean_HVC_Score'] = group['HVC_Score'].mean() if 'HVC_Score' in group else None
-    record['Median_AQB'] = group['AQB'].median()
-    record['Avg_Prod_Count'] = group['TOTAL_PRODUCT_EXCL_SERVICES'].mean()
-    record['Avg_Txn_Score'] = group['TRANSACTION_SCORE'].mean()
-    record['Avg_Digital_Score'] = group['DIGITAL_ENGAGE'].mean()
-    record['Dormancy_Risk_%'] = 100 * (group['DORM_RISK'] > 0).mean()
-    # Portfolio value share (customizable; example: weighted HVC score or AQB)
-    record['Portfolio_Value_Share'] = group['AQB'].sum()
-    agg_entries.append(record)
-
-summary_table = pd.DataFrame(agg_entries)
-summary_table['Portfolio_Value_Share'] /= summary_table['Portfolio_Value_Share'].sum()  # Normalize to %
-summary_table['Portfolio_Value_Share'] *= 100
-summary_table = summary_table.sort_values('Mean_HVC_Score', ascending=False)
-
-
-pd.set_option('display.float_format', lambda x: f'{x:,.2f}')
-display_cols = [
-    "Cluster", "Customers", "Mean_HVC_Score", "Median_AQB", "Avg_Prod_Count",
-    "Avg_Txn_Score", "Avg_Digital_Score", "Dormancy_Risk_%", "Portfolio_Value_Share"
-]
-print(summary_table[display_cols])
-
-
-summary_table["High_Value_Product_Ratio"] = (
-    summary_table["Avg_Prod_Count"] > threshold_value  # set your bank's high-value threshold
-)
-
-
 import plotly.graph_objects as go
 
-group_names = list(feature_groups.keys())
-normalized = summary_table[group_names].copy()
+# List of feature group names in desired order
+group_names = ['Balance', 'Product', 'Transaction', 'Digital', 'Risk']
+
+# Normalize feature group averages for each cluster to 0-1
+normalized = summary_table.copy()
 for name in group_names:
-    min_val = normalized[name].min()
-    max_val = normalized[name].max()
-    normalized[name] = (normalized[name] - min_val) / (max_val - min_val)
+    col_min = normalized[name].min()
+    col_max = normalized[name].max()
+    # Avoid division by zero if all values are equal
+    normalized[name] = (normalized[name] - col_min) / (col_max - col_min) if col_max > col_min else 1.0
+
+# Ensure Cluster is treated as string for naming
+normalized['Cluster'] = normalized['Cluster'].astype(str)
+
+
+
+# Radar chart requires closing the loop: repeat first value at the end for each trace
+radar_categories = group_names + [group_names[0]]
 
 # Prepare traces for each cluster
-def radar_trace(row):
-    values = [row[gn] for gn in group_names]
-    values += values[:1]  # closed loop
-    return go.Scatterpolar(
+fig = go.Figure()
+
+for i, row in normalized.iterrows():
+    values = [row[name] for name in group_names]
+    values += [values[0]]  # Loop closure for radar
+    fig.add_trace(go.Scatterpolar(
         r=values,
-        theta=group_names + [group_names[0]],
+        theta=radar_categories,
         fill='toself',
         name=f'Cluster {row["Cluster"]}'
-    )
+    ))
 
-fig = go.Figure([radar_trace(row) for _, row in normalized.iterrows()])
+
+
 fig.update_layout(
-    polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-    title="HVC Driver Profile by Cluster",
+    polar=dict(
+        radialaxis=dict(
+            visible=True,
+            range=[0, 1]
+        )
+    ),
+    title="High-Value Customer Driver Profile by Cluster",
     showlegend=True
 )
+
 fig.show()
 
 
