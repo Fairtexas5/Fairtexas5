@@ -11,3 +11,6 @@ data = [
 headers = ["Group", "Features Used", "Business Rationale"]
 
 print(tabulate(data, headers=headers, tablefmt="grid"))
+
+
+HVC_Score = 0.30 × Balance + 0.25 × Product + 0.20 × Transaction + 0.15 × Digital − 0.10 × Risk
