@@ -1,16 +1,23 @@
-from tabulate import tabulate
+import pandas as pd
 
-data = [
-    ["Balance", "AQB, TOTAL_HV_AMT, BAL_UTIL", "Indicates deposit stability and liquidity"],
-    ["Product", "TOTAL_PRODUCT_EXCL_SERVICES, PRODUCT_SCORE, CROSS_SELL_SUCCESS", "Measures product engagement and cross-sell depth"],
-    ["Transaction", "TXN_FREQ, AVG_TXN_VALUE, TRANSACTION_SCORE", "Captures revenue-generating activity"],
-    ["Digital", "DIGITAL_ENGAGE, TOTAL_DIG_CNT, DIGI_TO_PHYS", "Reflects digital adoption and cost efficiency"],
-    ["Risk", "DORM_RISK, SEV_DORM_RISK, TXN_CONSISTENCY", "Penalizes for dormancy and inconsistency"],
-]
+data = {
+    "Group": ["Balance", "Product", "Transaction", "Digital", "Risk"],
+    "Features Used": [
+        "AQB, TOTAL_HV_AMT, BAL_UTIL",
+        "TOTAL_PRODUCT_EXCL_SERVICES, PRODUCT_SCORE, CROSS_SELL_SUCCESS",
+        "TXN_FREQ, AVG_TXN_VALUE, TRANSACTION_SCORE",
+        "DIGITAL_ENGAGE, TOTAL_DIG_CNT, DIGI_TO_PHYS",
+        "DORM_RISK, SEV_DORM_RISK, TXN_CONSISTENCY"
+    ],
+    "Business Rationale": [
+        "Indicates deposit stability and liquidity",
+        "Measures product engagement and cross-sell depth",
+        "Captures revenue-generating activity",
+        "Reflects digital adoption and cost efficiency",
+        "Penalizes for dormancy and inconsistency"
+    ]
+}
 
-headers = ["Group", "Features Used", "Business Rationale"]
+df = pd.DataFrame(data)
 
-print(tabulate(data, headers=headers, tablefmt="grid"))
-
-
-HVC_Score = 0.30 × Balance + 0.25 × Product + 0.20 × Transaction + 0.15 × Digital − 0.10 × Risk
+print(df)
