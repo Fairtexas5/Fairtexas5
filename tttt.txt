@@ -1,59 +1,23 @@
-import pandas as pd
-
-# --- Step 1: Create Combined Features as before ---
-
-# Transaction amount total (NEFT + RTGS)
-df['TOTAL_TRANS_AMT'] = df['TOTAL_NEFT_AMT'] + df['TOTAL_RTGS_AMT']
-
-# Transaction count total (NEFT + RTGS)
-df['TOTAL_TRANS_CNT'] = df['TOTAL_NEFT_CNT'] + df['TOTAL_RTGS_CNT']
-
-# Average transaction value (combined weighted by counts)
-df['AVG_TXN_VALUE_COMBINED'] = (
-    (df['NEFT_AVG_TXN_VALUE'] * df['TOTAL_NEFT_CNT'] + df['RTGS_AVG_TXN_VALUE'] * df['TOTAL_RTGS_CNT'])
-    / (df['TOTAL_NEFT_CNT'] + df['TOTAL_RTGS_CNT'] + 1e-6)  # avoid divide by zero
-)
-
-# Overall balance growth indicator and stability (average)
-df['BAL_GROWTH_STAB'] = (df['BAL_GTH_IND'] + df['BAL_STAB']) / 2
-
-# Engagement score combining digital engagement and product score as weighted avg
-df['ENGAGEMENT_SCORE'] = 0.6 * df['PRODUCT_SCORE'] + 0.4 * df['DIGITAL_ENGAGE']
-
-# Loan preference index (average of sophistication and secured loan preference)
-df['LOAN_PREF_INDEX'] = (df['LOAN_SOPHISTICATION'] + df['SEC_LOAN_PREF']) / 2
-
-# Risk score aggregation (sum of dormancy risk indicators)
-df['TOTAL_DORM_RISK'] = df['DORM_RISK'] + df['SEV_DORM_RISK']
-
-
-# --- Step 2: Define trimmed list of combined features plus TRANSACTION_SCORE ---
-
-summary_features = [
-    'TRANSACTION_SCORE',
-    'TOTAL_TRANS_AMT',
-    'TOTAL_TRANS_CNT',
-    'AVG_TXN_VALUE_COMBINED',
-    'BAL_GROWTH_STAB',
-    'ENGAGEMENT_SCORE',
-    'LOAN_PREF_INDEX',
-    'TOTAL_DORM_RISK'
-]
-
-# Keep only features existing in df to avoid errors
-summary_features = [f for f in summary_features if f in df.columns]
-
-# --- Step 3: Calculate mean and median summary tables by cluster ---
+def scale_0_100(df):
+    return (df - df.min()) / (df.max() - df.min()) * 100
 
 mean_summary = df.groupby('KmeansCluster')[summary_features].mean()
 median_summary = df.groupby('KmeansCluster')[summary_features].median()
+mean_summary_scaled = scale_0_100(mean_summary)
+median_summary_scaled = scale_0_100(median_summary)
+print(mean_summary_scaled)
+print(median_summary_scaled)
 
-print("=== Mean Summary by Cluster ===")
-print(mean_summary)
 
-print("\n=== Median Summary by Cluster ===")
-print(median_summary)
+# Sort mean summary by cluster ascending
+mean_summary_sorted = mean_summary_scaled.sort_index(ascending=True)
 
-# Optional: Save to CSV for later analysis
-# mean_summary.to_csv('cluster_mean_summary_trimmed_combined_features.csv')
-# median_summary.to_csv('cluster_median_summary_trimmed_combined_features.csv')
+# Sort median summary by cluster ascending
+median_summary_sorted = median_summary_scaled.sort_index(ascending=True)
+
+print("=== Mean Summary by Cluster (Sorted Ascending) ===")
+print(mean_summary_sorted)
+
+print("\n=== Median Summary by Cluster (Sorted Ascending) ===")
+print(median_summary_sorted)
+
