@@ -1,112 +1,43 @@
-agg_dict = {}
+TDV, TOTAL_NEFT_DR_AMT, TOTAL_NEFT_AMT, TOTAL_RTGS_AMT, TOTAL_NEFT_CNT, TOTAL_RTGS_CNT, TRANSACTION_SCORE
+AVG_DR_AMT, AVG_CR_AMT, NEFT_AVG_TXN_VALUE, RTGS_AVG_TXN_VALUE
+AQB, BAL_STAB, NET_FLOW_AMT, BAL_GTH_IND
+TOTAL_PRODUCT, TOTAL_PRODUCT_EXCL_SERVICES, PRODUCT_SCORE, RELATION_DEPTH, PREM_BANK
+TENURE_DAYS, RELATION_DEPTH
 
-# Categorical columns - most frequent value (mode)
-agg_dict.update({
-    col: (lambda x: x.mode().iloc[0] if x.notna().any() else 'Unknown')
-    for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] if col in df_sb.columns
-})
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import RobustScaler
+from scipy.stats import mstats
 
-# Tier columns - maximum
-agg_dict.update({
-    col: 'max'
-    for col in tier_cols if col in df_sb.columns
-})
+# Features list from your data
+features = [
+    # all your features except categorial ones, adjust as needed
+    'AQB', 'TDV', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE', 'PRODUCT_SCORE',
+    'TENURE_DAYS', 'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
+    'TOTAL_RTGS_DR_CNT', 'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT',
+    'NEFT_AMT_RATIO', 'RTGS_AMT_RATIO', 'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH',
+    'RTGS_AMT_GROWTH', 'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY',
+    'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE',  # ...add all numeric columns
+]
 
-# Product/service columns - maximum (binary flags)
-agg_dict.update({
-    col: 'max'
-    for col in service_cols + product_cols if col in df_sb.columns
-})
+# Separate out the columns that have important high values like 'TDV'
+important_features = ['TDV']
 
-# Balance/amount columns - sum
-agg_dict.update({
-    col: 'sum'
-    for col in balance_cols if col in df_sb.columns
-})
+# Thresholds for winsorizing columns (except important ones)
+winsorizing_columns = [col for col in features if col not in important_features]
 
-# Transaction columns - sum for counts/amounts, mean for ratios
-agg_dict.update({
-    col: ('sum' if col in [
-        'TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
-        'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
-        'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT'
-    ] else 'mean')
-    for col in transaction_cols if col in df_sb.columns
-})
+# Winsorize capped at 1% and 99% quantiles
+df_winsorized = df.copy()
+for col in winsorizing_columns:
+    df_winsorized[col] = mstats.winsorize(df[col], limits=[0.01, 0.01])
 
-# Date columns - specific aggregation
-agg_dict.update({
-    col: agg_type
-    for col, agg_type in {
-        'ACCT_OPN_DT': 'min',
-        'REPORT_DT': 'max',
-        'LST_CUST_CR_DT': 'max',
-        'LST_CUST_DR_DT': 'max',
-        'TENURE_DAYS': 'max'
-    }.items() if col in df_sb.columns
-})
+# Robust scaling
+scaler = RobustScaler()
+df_scaled = df_winsorized.copy()
+df_scaled[features] = scaler.fit_transform(df_winsorized[features])
 
+# For TDV (important feature), do not winsorize but still scale robustly
+# (already scaled above)
 
-
-
-
-
-feature_categories = {
-    'Identity': [
-        'CUST_NBR', 'CUST_CLASS', 'CUST_CAT', 'CUST_CRIN', 'HOME_BRNCH_NBR',
-        'CUST_AGE', 'MRTL_STS', 'PANFLAG', 'MOBILE_NBR'
-    ],
-    'Account_Info': [
-        'JNT_ACCT_FLG', 'JNT_ACCT_FLG_NUM', 'ACCT_OPN_DT', 'TENURE_DAYS'
-    ],
-    'Balances': [
-        'END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD', 'AQB', 'TDV'
-    ],
-    'Transactions': [
-        # General transaction metrics
-        'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO', 'TXN_FREQ', 'AVG_TXN_AMT',
-        'AVG_DR_AMT', 'AVG_CR_AMT',
-        # Granular aggregates
-        'TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
-        'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
-        'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT',
-        # Add NEFT/RTGS-specific (high-value) metrics if available
-        'TOTAL_NEFT_CR_CNT', 'TOTAL_NEFT_DR_CNT', 'TOTAL_NEFT_CR_AMT',
-        'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
-        'TOTAL_RTGS_CR_CNT', 'TOTAL_RTGS_DR_CNT', 'TOTAL_RTGS_CR_AMT',
-        'TOTAL_RTGS_DR_AMT', 'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT'
-    ],
-    'Products': [
-        'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'SAVINGS_BANK', 'FD', 'RD',
-        'PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
-        'SBI_MF', 'SBI_CAP', 'SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'NPS', 'PMOJY', 'PMSBY'
-    ],
-    'Digital_Channels': [
-        'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'DIGITAL_ENGAGE', 'CHNL_SOPHISTICATION'
-    ],
-    'Behavioral': [
-        'TXN_INTENSITY', 'MTH_TXN_RATE', 'BAL_UTIL', 'CROSS_SELL_SUCCESS',
-        'RELATION_DEPTH', 'TENURE_TXN_INTERACT', 'PROD_BAL_INTERACT'
-    ],
-    'Risk_Indicators': [
-        'DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
-    ],
-    'Ratios': [
-        'NET_FLOW_RATIO', 'CR_TO_DR_RATIO', 'TXN_CNT_RATIO', 'PROD_DIVERSITY',
-        'LOAN_TO_INVEST', 'DIGI_TO_PHYS', 'HV_AMT_RATIO', 'DIG_AMT_RATIO',
-        'AVG_TXN_VALUE', 'TXN_CNT_GROWTH', 'TXN_AMT_GROWTH', 'TXN_CONSISTENCY',
-        'JNT_ACCT_DR_AMT',
-        # Mode ratios
-        'NEFT_AMT_RATIO', 'RTGS_AMT_RATIO', 'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH',
-        'NEFT_AMT_GROWTH', 'RTGS_AMT_GROWTH', 'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY',
-        'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE'
-    ],
-    'Scores': [
-        'TRANSACTION_SCORE', 'PRODUCT_SCORE', 'INVEST_ORIENT',
-        'LOAN_SOPHISTICATION', 'SERV_ADOPT'
-    ],
-    'Segments': [
-        'ACT_LVL', 'PREM_BANK'
-    ]
-}
+# Now df_scaled is ready for clustering
 
