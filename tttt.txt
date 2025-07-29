@@ -26,79 +26,60 @@ df['LOAN_PREF_INDEX'] = (df['LOAN_SOPHISTICATION'] + df['SEC_LOAN_PREF']) / 2
 # Risk score aggregation (sum of dormancy risk indicators)
 df['TOTAL_DORM_RISK'] = df['DORM_RISK'] + df['SEV_DORM_RISK']
 
-# --- Step 2: Define Feature Groups Using Combined Features ---
+# --- Step 2: Define Flat List of Combined Features including transaction score ---
 
-high_value_score_col = 'TRANSACTION_SCORE'  # Adjust if needed
+combined_features = [
+    'TDV',
+    'TOTAL_TRANS_AMT',
+    'TOTAL_TRANS_CNT',
+    'AVG_TXN_VALUE_COMBINED',
+    'TXN_FREQ',
+    'AVG_DR_AMT',
+    'AVG_CR_AMT',
+    'NET_FLOW_AMT',
+    'NET_FLOW_RATIO',
+    'AQB',
+    'BAL_GROWTH_STAB',
+    'MTH_BAL_TREND',
+    'BAL_UTIL',
+    'ENGAGEMENT_SCORE',
+    'TOTAL_PRODUCT',
+    'TOTAL_PRODUCT_EXCL_SERVICES',
+    'RELATION_DEPTH',
+    'PREM_BANK',
+    'PROD_DIVERSITY',
+    'CROSS_SELL_SUCCESS',
+    'DIGI_TO_PHYS',
+    'TOTAL_DORM_RISK',
+    'DAY_SINCE_LST_TXN',
+    'DAYS_SINCE_LAST_CR',
+    'DAYS_SINCE_LAST_DR',
+    'LOAN_PREF_INDEX',
+    'CR_TO_DR_RATIO',
+    'NEFT_CNT_GROWTH',
+    'RTGS_CNT_GROWTH',
+    'RTGS_AMT_GROWTH',
+    'NEFT_CONSISTENCY',
+    'RTGS_CONSISTENCY',
+    'TENURE_DAYS',
+    'CUST_AGE',
+    'TRANSACTION_SCORE'  # high value score column
+]
 
-feature_groups = {
-    'Transaction Features': [
-        'TDV', 'TOTAL_TRANS_AMT', 'TOTAL_TRANS_CNT',
-        'AVG_TXN_VALUE_COMBINED', 'TXN_FREQ', 'AVG_DR_AMT', 'AVG_CR_AMT',
-        'NET_FLOW_AMT', 'NET_FLOW_RATIO'
-    ],
-    'Balance & Growth': [
-        'AQB', 'BAL_GROWTH_STAB', 'MTH_BAL_TREND', 'BAL_UTIL'
-    ],
-    'Customer Engagement': [
-        'ENGAGEMENT_SCORE', 'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES',
-        'RELATION_DEPTH', 'PREM_BANK', 'PROD_DIVERSITY', 'CROSS_SELL_SUCCESS'
-    ],
-    'Digital Engagement': [
-        'DIGI_TO_PHYS'  # DIGITAL_ENGAGE incorporated into ENGAGEMENT_SCORE
-    ],
-    'Risk & Dormancy': [
-        'TOTAL_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
-    ],
-    'Loan & Credit': [
-        'LOAN_PREF_INDEX', 'CR_TO_DR_RATIO'
-    ],
-    'Growth & Consistency': [
-        'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH', 'RTGS_AMT_GROWTH', 'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY'
-    ],
-    'Customer Profile': [
-        'TENURE_DAYS', 'CUST_AGE'
-    ],
-    'High Value Score': [
-        high_value_score_col
-    ]
-}
+# Filter to keep only columns that exist in your dataframe
+valid_features = [f for f in combined_features if f in df.columns]
 
-# --- Step 3: Summary Calculation Functions ---
+# --- Step 3: Compute Mean and Median summaries by cluster ---
 
-def clustered_summary(df, cluster_col, grouped_features):
-    mean_dfs = []
-    median_dfs = []
+mean_summary = df.groupby('KmeansCluster')[valid_features].mean()
+median_summary = df.groupby('KmeansCluster')[valid_features].median()
 
-    for group_name, features in grouped_features.items():
-        # Keep only features present in df to avoid errors
-        valid_features = [f for f in features if f in df.columns]
-        if not valid_features:
-            continue
-
-        mean_df = df.groupby(cluster_col)[valid_features].mean()
-        mean_df.columns = [f"{group_name} - Mean - {col}" for col in mean_df.columns]
-
-        median_df = df.groupby(cluster_col)[valid_features].median()
-        median_df.columns = [f"{group_name} - Median - {col}" for col in median_df.columns]
-
-        mean_dfs.append(mean_df)
-        median_dfs.append(median_df)
-
-    combined_mean = pd.concat(mean_dfs, axis=1)
-    combined_median = pd.concat(median_dfs, axis=1)
-
-    return combined_mean, combined_median
-
-# --- Step 4: Run Summary ---
-
-mean_summary, median_summary = clustered_summary(df, 'KmeansCluster', feature_groups)
-
-print("=== Combined Mean Summary by Cluster ===")
+print("=== Mean Summary by Cluster ===")
 print(mean_summary)
 
-print("\n=== Combined Median Summary by Cluster ===")
+print("\n=== Median Summary by Cluster ===")
 print(median_summary)
 
-# Optional: Save to CSV for offline analysis
-# mean_summary.to_csv('clustered_mean_summary_combined_features.csv')
-# median_summary.to_csv('clustered_median_summary_combined_features.csv')
+# Optional: save summaries to CSV files
+# mean_summary.to_csv('cluster_mean_summary_flat_combined_features.csv')
+# median_summary.to_csv('cluster_median_summary_flat_combined_features.csv')
