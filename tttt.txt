@@ -1,43 +1,76 @@
-TDV, TOTAL_NEFT_DR_AMT, TOTAL_NEFT_AMT, TOTAL_RTGS_AMT, TOTAL_NEFT_CNT, TOTAL_RTGS_CNT, TRANSACTION_SCORE
-AVG_DR_AMT, AVG_CR_AMT, NEFT_AVG_TXN_VALUE, RTGS_AVG_TXN_VALUE
-AQB, BAL_STAB, NET_FLOW_AMT, BAL_GTH_IND
-TOTAL_PRODUCT, TOTAL_PRODUCT_EXCL_SERVICES, PRODUCT_SCORE, RELATION_DEPTH, PREM_BANK
-TENURE_DAYS, RELATION_DEPTH
-
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import RobustScaler
-from scipy.stats import mstats
-
-# Features list from your data
-features = [
-    # all your features except categorial ones, adjust as needed
-    'AQB', 'TDV', 'DIGITAL_ENGAGE', 'TRANSACTION_SCORE', 'PRODUCT_SCORE',
-    'TENURE_DAYS', 'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
+# Transaction Features
+features_txn = [
+    'TDV', 'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
     'TOTAL_RTGS_DR_CNT', 'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT',
-    'NEFT_AMT_RATIO', 'RTGS_AMT_RATIO', 'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH',
-    'RTGS_AMT_GROWTH', 'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY',
-    'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE',  # ...add all numeric columns
+    'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE', 'TXN_FREQ',
+    'AVG_DR_AMT', 'AVG_CR_AMT', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
 ]
 
-# Separate out the columns that have important high values like 'TDV'
-important_features = ['TDV']
+# Balance & Loyalty Features
+features_balance = [
+    'AQB', 'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'NET_FLOW_AMT', 'BAL_UTIL'
+]
 
-# Thresholds for winsorizing columns (except important ones)
-winsorizing_columns = [col for col in features if col not in important_features]
+# Customer Profile
+features_profile = [
+    'TENURE_DAYS', 'PRODUCT_SCORE', 'TOTAL_PRODUCT',
+    'TOTAL_PRODUCT_EXCL_SERVICES', 'RELATION_DEPTH', 'PREM_BANK',
+    'PROD_DIVERSITY', 'CROSS_SELL_SUCCESS'
+]
 
-# Winsorize capped at 1% and 99% quantiles
-df_winsorized = df.copy()
-for col in winsorizing_columns:
-    df_winsorized[col] = mstats.winsorize(df[col], limits=[0.01, 0.01])
+# Additional groups as you see fit...
+# Eg: Engagement, Risk, etc.
 
-# Robust scaling
-scaler = RobustScaler()
-df_scaled = df_winsorized.copy()
-df_scaled[features] = scaler.fit_transform(df_winsorized[features])
 
-# For TDV (important feature), do not winsorize but still scale robustly
-# (already scaled above)
 
-# Now df_scaled is ready for clustering
+
+def prepare_radar_data(df, cluster_col, group_features):
+    # Group by cluster and calculate mean
+    cluster_means = df.groupby(cluster_col)[group_features].mean()
+    # Normalize for radar chart plotting (0-1 per feature)
+    cluster_means_norm = (cluster_means - cluster_means.min()) / (cluster_means.max() - cluster_means.min())
+    return cluster_means_norm
+
+
+
+
+import plotly.graph_objects as go
+
+def plot_cluster_radar(cluster_means_norm, group_name):
+    categories = list(cluster_means_norm.columns)
+    fig = go.Figure()
+    for cluster_id in cluster_means_norm.index:
+        fig.add_trace(go.Scatterpolar(
+            r = cluster_means_norm.loc[cluster_id].values,
+            theta = categories,
+            fill = 'toself',
+            name = f'Cluster {cluster_id}'
+        ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0,1])),
+        showlegend=True,
+        title=f"Cluster Behavior: {group_name}"
+    )
+    fig.show()
+
+
+
+
+
+
+# Transaction Group Radar
+txn_data = prepare_radar_data(df, 'KmeansCluster', features_txn)
+plot_cluster_radar(txn_data, 'Transaction Features')
+
+# Balance Group Radar
+balance_data = prepare_radar_data(df, 'KmeansCluster', features_balance)
+plot_cluster_radar(balance_data, 'Balance & Growth')
+
+# Profile/Engagement Group Radar
+profile_data = prepare_radar_data(df, 'KmeansCluster', features_profile)
+plot_cluster_radar(profile_data, 'Profile & Engagement')
+
+
+
+
 
