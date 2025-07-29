@@ -1,6 +1,6 @@
 import pandas as pd
 
-# --- Step 1: Create Combined Features ---
+# --- Step 1: Create Combined Features as before ---
 
 # Transaction amount total (NEFT + RTGS)
 df['TOTAL_TRANS_AMT'] = df['TOTAL_NEFT_AMT'] + df['TOTAL_RTGS_AMT']
@@ -10,7 +10,7 @@ df['TOTAL_TRANS_CNT'] = df['TOTAL_NEFT_CNT'] + df['TOTAL_RTGS_CNT']
 
 # Average transaction value (combined weighted by counts)
 df['AVG_TXN_VALUE_COMBINED'] = (
-    (df['NEFT_AVG_TXN_VALUE'] * df['TOTAL_NEFT_CNT'] + df['RTGS_AVG_TXN_VALUE'] * df['TOTAL_RTGS_CNT']) 
+    (df['NEFT_AVG_TXN_VALUE'] * df['TOTAL_NEFT_CNT'] + df['RTGS_AVG_TXN_VALUE'] * df['TOTAL_RTGS_CNT'])
     / (df['TOTAL_NEFT_CNT'] + df['TOTAL_RTGS_CNT'] + 1e-6)  # avoid divide by zero
 )
 
@@ -26,53 +26,27 @@ df['LOAN_PREF_INDEX'] = (df['LOAN_SOPHISTICATION'] + df['SEC_LOAN_PREF']) / 2
 # Risk score aggregation (sum of dormancy risk indicators)
 df['TOTAL_DORM_RISK'] = df['DORM_RISK'] + df['SEV_DORM_RISK']
 
-# --- Step 2: Define Flat List of Combined Features including transaction score ---
 
-combined_features = [
-    'TDV',
+# --- Step 2: Define trimmed list of combined features plus TRANSACTION_SCORE ---
+
+summary_features = [
+    'TRANSACTION_SCORE',
     'TOTAL_TRANS_AMT',
     'TOTAL_TRANS_CNT',
     'AVG_TXN_VALUE_COMBINED',
-    'TXN_FREQ',
-    'AVG_DR_AMT',
-    'AVG_CR_AMT',
-    'NET_FLOW_AMT',
-    'NET_FLOW_RATIO',
-    'AQB',
     'BAL_GROWTH_STAB',
-    'MTH_BAL_TREND',
-    'BAL_UTIL',
     'ENGAGEMENT_SCORE',
-    'TOTAL_PRODUCT',
-    'TOTAL_PRODUCT_EXCL_SERVICES',
-    'RELATION_DEPTH',
-    'PREM_BANK',
-    'PROD_DIVERSITY',
-    'CROSS_SELL_SUCCESS',
-    'DIGI_TO_PHYS',
-    'TOTAL_DORM_RISK',
-    'DAY_SINCE_LST_TXN',
-    'DAYS_SINCE_LAST_CR',
-    'DAYS_SINCE_LAST_DR',
     'LOAN_PREF_INDEX',
-    'CR_TO_DR_RATIO',
-    'NEFT_CNT_GROWTH',
-    'RTGS_CNT_GROWTH',
-    'RTGS_AMT_GROWTH',
-    'NEFT_CONSISTENCY',
-    'RTGS_CONSISTENCY',
-    'TENURE_DAYS',
-    'CUST_AGE',
-    'TRANSACTION_SCORE'  # high value score column
+    'TOTAL_DORM_RISK'
 ]
 
-# Filter to keep only columns that exist in your dataframe
-valid_features = [f for f in combined_features if f in df.columns]
+# Keep only features existing in df to avoid errors
+summary_features = [f for f in summary_features if f in df.columns]
 
-# --- Step 3: Compute Mean and Median summaries by cluster ---
+# --- Step 3: Calculate mean and median summary tables by cluster ---
 
-mean_summary = df.groupby('KmeansCluster')[valid_features].mean()
-median_summary = df.groupby('KmeansCluster')[valid_features].median()
+mean_summary = df.groupby('KmeansCluster')[summary_features].mean()
+median_summary = df.groupby('KmeansCluster')[summary_features].median()
 
 print("=== Mean Summary by Cluster ===")
 print(mean_summary)
@@ -80,6 +54,6 @@ print(mean_summary)
 print("\n=== Median Summary by Cluster ===")
 print(median_summary)
 
-# Optional: save summaries to CSV files
-# mean_summary.to_csv('cluster_mean_summary_flat_combined_features.csv')
-# median_summary.to_csv('cluster_median_summary_flat_combined_features.csv')
+# Optional: Save to CSV for later analysis
+# mean_summary.to_csv('cluster_mean_summary_trimmed_combined_features.csv')
+# median_summary.to_csv('cluster_median_summary_trimmed_combined_features.csv')
