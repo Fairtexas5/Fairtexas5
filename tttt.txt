@@ -1,151 +1,112 @@
-import pandas as pd
+agg_dict = {}
 
-# ---- Setup ----
-file_paths = {
-    'JAN': '/mnts/nfs-sbi-pv/S1043553/base_txn_jan25.txt',
-    'FEB': '/mnts/nfs-sbi-pv/S1043553/base_txn_feb25.txt',
-    'MAR': '/mnts/nfs-sbi-pv/S1043553/base_txn_mar25.txt',
+# Categorical columns - most frequent value (mode)
+agg_dict.update({
+    col: (lambda x: x.mode().iloc[0] if x.notna().any() else 'Unknown')
+    for col in ['CUST_CLASS', 'CUST_CAT', 'JNT_ACCT_FLG'] if col in df_sb.columns
+})
+
+# Tier columns - maximum
+agg_dict.update({
+    col: 'max'
+    for col in tier_cols if col in df_sb.columns
+})
+
+# Product/service columns - maximum (binary flags)
+agg_dict.update({
+    col: 'max'
+    for col in service_cols + product_cols if col in df_sb.columns
+})
+
+# Balance/amount columns - sum
+agg_dict.update({
+    col: 'sum'
+    for col in balance_cols if col in df_sb.columns
+})
+
+# Transaction columns - sum for counts/amounts, mean for ratios
+agg_dict.update({
+    col: ('sum' if col in [
+        'TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
+        'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
+        'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT'
+    ] else 'mean')
+    for col in transaction_cols if col in df_sb.columns
+})
+
+# Date columns - specific aggregation
+agg_dict.update({
+    col: agg_type
+    for col, agg_type in {
+        'ACCT_OPN_DT': 'min',
+        'REPORT_DT': 'max',
+        'LST_CUST_CR_DT': 'max',
+        'LST_CUST_DR_DT': 'max',
+        'TENURE_DAYS': 'max'
+    }.items() if col in df_sb.columns
+})
+
+
+
+
+
+
+feature_categories = {
+    'Identity': [
+        'CUST_NBR', 'CUST_CLASS', 'CUST_CAT', 'CUST_CRIN', 'HOME_BRNCH_NBR',
+        'CUST_AGE', 'MRTL_STS', 'PANFLAG', 'MOBILE_NBR'
+    ],
+    'Account_Info': [
+        'JNT_ACCT_FLG', 'JNT_ACCT_FLG_NUM', 'ACCT_OPN_DT', 'TENURE_DAYS'
+    ],
+    'Balances': [
+        'END_OF_DAY_BAL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD', 'AQB', 'TDV'
+    ],
+    'Transactions': [
+        # General transaction metrics
+        'DR_AMT', 'CR_AMT', 'DR_NO', 'CR_NO', 'TXN_FREQ', 'AVG_TXN_AMT',
+        'AVG_DR_AMT', 'AVG_CR_AMT',
+        # Granular aggregates
+        'TOTAL_DR_CNT', 'TOTAL_CR_CNT', 'TOTAL_DR_AMT', 'TOTAL_CR_AMT',
+        'TOTAL_HV_AMT', 'TOTAL_HV_CNT', 'TOTAL_DIG_AMT', 'TOTAL_DIG_CNT',
+        'TOTAL_TXN_AMT', 'TOTAL_TXN_CNT',
+        # Add NEFT/RTGS-specific (high-value) metrics if available
+        'TOTAL_NEFT_CR_CNT', 'TOTAL_NEFT_DR_CNT', 'TOTAL_NEFT_CR_AMT',
+        'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
+        'TOTAL_RTGS_CR_CNT', 'TOTAL_RTGS_DR_CNT', 'TOTAL_RTGS_CR_AMT',
+        'TOTAL_RTGS_DR_AMT', 'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT'
+    ],
+    'Products': [
+        'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'SAVINGS_BANK', 'FD', 'RD',
+        'PERSONAL_LOAN', 'HOME_LOAN', 'CAR_LOAN', 'EDUCATION_LOAN', 'GOLD_LOAN', 'AGRI_LOAN',
+        'SBI_MF', 'SBI_CAP', 'SBI_CARD', 'SBI_LFE', 'SBI_GNRL', 'APY', 'NPS', 'PMOJY', 'PMSBY'
+    ],
+    'Digital_Channels': [
+        'ATM', 'MBS', 'YONO', 'UPI', 'INB', 'DIGITAL_ENGAGE', 'CHNL_SOPHISTICATION'
+    ],
+    'Behavioral': [
+        'TXN_INTENSITY', 'MTH_TXN_RATE', 'BAL_UTIL', 'CROSS_SELL_SUCCESS',
+        'RELATION_DEPTH', 'TENURE_TXN_INTERACT', 'PROD_BAL_INTERACT'
+    ],
+    'Risk_Indicators': [
+        'DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
+    ],
+    'Ratios': [
+        'NET_FLOW_RATIO', 'CR_TO_DR_RATIO', 'TXN_CNT_RATIO', 'PROD_DIVERSITY',
+        'LOAN_TO_INVEST', 'DIGI_TO_PHYS', 'HV_AMT_RATIO', 'DIG_AMT_RATIO',
+        'AVG_TXN_VALUE', 'TXN_CNT_GROWTH', 'TXN_AMT_GROWTH', 'TXN_CONSISTENCY',
+        'JNT_ACCT_DR_AMT',
+        # Mode ratios
+        'NEFT_AMT_RATIO', 'RTGS_AMT_RATIO', 'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH',
+        'NEFT_AMT_GROWTH', 'RTGS_AMT_GROWTH', 'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY',
+        'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE'
+    ],
+    'Scores': [
+        'TRANSACTION_SCORE', 'PRODUCT_SCORE', 'INVEST_ORIENT',
+        'LOAN_SOPHISTICATION', 'SERV_ADOPT'
+    ],
+    'Segments': [
+        'ACT_LVL', 'PREM_BANK'
+    ]
 }
-month_prefixes = ['JAN25', 'FEB25', 'MAR25']
-month_names = ['JAN', 'FEB', 'MAR']
 
-# Transaction modes and fields
-modes = ['UPI', 'NEFT', 'RTGS', 'AEPS', 'BRNCH', 'INB']
-txn_fields = ['CR_CNT', 'DR_CNT', 'CR_AMT', 'DR_AMT']
-
-# Prepare mode-typed column names for selection
-all_mode_columns = [f"{mode}_{field}" for mode in modes for field in txn_fields]
-
-monthly_txn_data = []
-
-# ---- Aggregate for each month ----
-for month_name, month_prefix in zip(month_names, month_prefixes):
-    file_path = file_paths[month_name]
-    print(f"Processing {month_name} from {file_path}")
-
-    df = pd.read_csv(file_path, low_memory=False)
-    # Clean column names
-    df.columns = [col.upper().replace(f'_{month_prefix}', '') for col in df.columns]
-    
-    # Keep needed columns if they exist
-    existing_cols = [col for col in all_mode_columns if col in df.columns]
-    agg_dict = {col: 'sum' for col in existing_cols}
-    
-    month_agg = df.groupby('ACCT_NBR').agg(agg_dict).reset_index()
-    
-    # Fill NaN, ensure numeric
-    for col in existing_cols:
-        month_agg[col] = pd.to_numeric(month_agg[col], errors='coerce').fillna(0)
-    
-    # Calculate per-mode totals if needed for this month
-    for mode in modes:
-        mode_cr_cnt = f"{mode}_CR_CNT"
-        mode_dr_cnt = f"{mode}_DR_CNT"
-        mode_cr_amt = f"{mode}_CR_AMT"
-        mode_dr_amt = f"{mode}_DR_AMT"
-        if mode_cr_cnt in month_agg and mode_dr_cnt in month_agg:
-            month_agg[f"{month_name}_{mode}_TOTAL_CNT"] = month_agg[mode_cr_cnt] + month_agg[mode_dr_cnt]
-        if mode_cr_amt in month_agg and mode_dr_amt in month_agg:
-            month_agg[f"{month_name}_{mode}_TOTAL_AMT"] = month_agg[mode_cr_amt] + month_agg[mode_dr_amt]
-
-    # Select columns for this month's dataset
-    month_keep = ['ACCT_NBR'] + [f"{mode}_{field}" for mode in modes for field in txn_fields if f"{mode}_{field}" in month_agg.columns]
-    for mode in modes:
-        if f"{month_name}_{mode}_TOTAL_CNT" in month_agg:
-            month_keep.append(f"{month_name}_{mode}_TOTAL_CNT")
-        if f"{month_name}_{mode}_TOTAL_AMT" in month_agg:
-            month_keep.append(f"{month_name}_{mode}_TOTAL_AMT")
-    month_agg = month_agg[month_keep]
-    monthly_txn_data.append(month_agg)
-
-# ---- Combine all months on 'ACCT_NBR' ----
-from functools import reduce
-txn_account = reduce(lambda left, right: pd.merge(left, right, on='ACCT_NBR', how='outer'), monthly_txn_data)
-txn_account = txn_account.fillna(0)
-
-# ---- Aggregate over 3 months: total and ratio per mode ----
-for mode in ['NEFT', 'RTGS']:
-    # Sum CR_CNT, DR_CNT, CR_AMT, DR_AMT over all months
-    for field in txn_fields:
-        total_col = f"TOTAL_{mode}_{field}"
-        txn_account[total_col] = sum(
-            txn_account.get(f"{mode}_{field}", 0) if f"{mode}_{field}" in txn_account else 0
-            for month in month_names
-        ) if all(f"{mode}_{field}" in txn_account for month in month_names) else \
-            sum([
-                txn_account.get(f"{mode}_{field}", 0),
-                txn_account.get(f"{mode}_{field}.{month}", 0)
-            ] for month in month_names)
-    # Total by summing across months
-    txn_account[f"TOTAL_{mode}_CNT"] = txn_account[f"TOTAL_{mode}_CR_CNT"] + txn_account[f"TOTAL_{mode}_DR_CNT"]
-    txn_account[f"TOTAL_{mode}_AMT"] = txn_account[f"TOTAL_{mode}_CR_AMT"] + txn_account[f"TOTAL_{mode}_DR_AMT"]
-
-# ---- Whole portfolio totals for ratios and segmentation ----
-# All credit & debit for all modes
-txn_account['TOTAL_ALL_CR_CNT'] = sum([txn_account.get(f"{mode}_CR_CNT", 0) for mode in modes for month in month_names])
-txn_account['TOTAL_ALL_DR_CNT'] = sum([txn_account.get(f"{mode}_DR_CNT", 0) for mode in modes for month in month_names])
-txn_account['TOTAL_ALL_CR_AMT'] = sum([txn_account.get(f"{mode}_CR_AMT", 0) for mode in modes for month in month_names])
-txn_account['TOTAL_ALL_DR_AMT'] = sum([txn_account.get(f"{mode}_DR_AMT", 0) for mode in modes for month in month_names])
-
-txn_account['TOTAL_TXN_CNT'] = txn_account['TOTAL_ALL_CR_CNT'] + txn_account['TOTAL_ALL_DR_CNT']
-txn_account['TOTAL_TXN_AMT'] = txn_account['TOTAL_ALL_CR_AMT'] + txn_account['TOTAL_ALL_DR_AMT']
-
-# ---- High-value (RTGS) and NEFT ratios ----
-txn_account['RTGS_AMT_RATIO'] = txn_account['TOTAL_RTGS_AMT'] / (txn_account['TOTAL_TXN_AMT'] + 1e-6)
-txn_account['NEFT_AMT_RATIO'] = txn_account['TOTAL_NEFT_AMT'] / (txn_account['TOTAL_TXN_AMT'] + 1e-6)
-
-# ---- Growth metrics ----
-def calc_growth(df, field, month1, month2):
-    val1 = df.get(f"{month1}_{field}", 0)
-    val2 = df.get(f"{month2}_{field}", 0)
-    return (val2 - val1) / (val1 + 1e-6)
-
-# Transaction count and amount growth: Jan→Mar
-txn_account['NEFT_CNT_GROWTH'] = calc_growth(txn_account, 'NEFT_TOTAL_CNT', 'JAN', 'MAR')
-txn_account['RTGS_CNT_GROWTH'] = calc_growth(txn_account, 'RTGS_TOTAL_CNT', 'JAN', 'MAR')
-txn_account['NEFT_AMT_GROWTH'] = calc_growth(txn_account, 'NEFT_TOTAL_AMT', 'JAN', 'MAR')
-txn_account['RTGS_AMT_GROWTH'] = calc_growth(txn_account, 'RTGS_TOTAL_AMT', 'JAN', 'MAR')
-
-# ---- Consistency metric for NEFT and RTGS ----
-import numpy as np
-for mode in ['NEFT', 'RTGS']:
-    amt_cols = [f"{month}_{mode}_TOTAL_AMT" for month in month_names if f"{month}_{mode}_TOTAL_AMT" in txn_account.columns]
-    if amt_cols:
-        monthly_sums = txn_account[amt_cols].values
-        monthly_std = np.std(monthly_sums, axis=1)
-        monthly_mean = np.mean(monthly_sums, axis=1)
-        txn_account[f"{mode}_CONSISTENCY"] = 1 / (monthly_std / (monthly_mean + 1e-6) + 1e-6)
-    else:
-        txn_account[f"{mode}_CONSISTENCY"] = 0
-
-# ---- Average ticket size per mode ----
-for mode in ['NEFT', 'RTGS']:
-    txn_account[f"{mode}_AVG_TXN_VALUE"] = txn_account[f"TOTAL_{mode}_AMT"] / (txn_account[f"TOTAL_{mode}_CNT"] + 1e-6)
-
-# ---- Final selection of columns useful for high-value segmentation ----
-final_cols = [
-    'ACCT_NBR',
-    
-    # NEFT & RTGS totals
-    'TOTAL_NEFT_CR_CNT', 'TOTAL_NEFT_DR_CNT',
-    'TOTAL_NEFT_CR_AMT', 'TOTAL_NEFT_DR_AMT',
-    'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
-    'TOTAL_RTGS_CR_CNT', 'TOTAL_RTGS_DR_CNT',
-    'TOTAL_RTGS_CR_AMT', 'TOTAL_RTGS_DR_AMT',
-    'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT',
-    
-    # Portfolio totals and ratios
-    'TOTAL_TXN_CNT', 'TOTAL_TXN_AMT', 'NEFT_AMT_RATIO', 'RTGS_AMT_RATIO',
-
-    # Growth & consistency
-    'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH', 'NEFT_AMT_GROWTH', 'RTGS_AMT_GROWTH',
-    'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY',
-
-    # Avgerage ticket sizes
-    'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE',
-]
-
-final_cols = [col for col in final_cols if col in txn_account.columns]
-txn_account_final = txn_account[final_cols]
-
-print(f"Enhanced aggregation complete: {len(txn_account_final)} accounts, {len(final_cols)-1} features")
