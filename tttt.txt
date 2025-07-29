@@ -1,4 +1,38 @@
-# Transaction Features
+features_digital = [
+    'DIGITAL_ENGAGE', 'DIGI_TO_PHYS'
+]
+
+features_balance_dynamics = [
+    'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'BAL_UTIL', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
+]
+
+features_relationship = [
+    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'PRODUCT_SCORE', 'PROD_DIVERSITY',
+    'RELATION_DEPTH', 'PREM_BANK', 'CROSS_SELL_SUCCESS', 'PROD_BAL_INTERACT'
+]
+
+features_risk_dormancy = [
+    'DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
+]
+
+features_growth_consistency = [
+    'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH', 'RTGS_AMT_GROWTH',
+    'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY'
+]
+
+
+
+
+
+
+
+
+import pandas as pd
+from scipy.stats import mode
+
+# Assuming your DataFrame is 'df' and cluster labels in 'KmeansCluster'
+
+# Feature groups
 features_txn = [
     'TDV', 'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
     'TOTAL_RTGS_DR_CNT', 'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT',
@@ -6,71 +40,81 @@ features_txn = [
     'AVG_DR_AMT', 'AVG_CR_AMT', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
 ]
 
-# Balance & Loyalty Features
 features_balance = [
     'AQB', 'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'NET_FLOW_AMT', 'BAL_UTIL'
 ]
 
-# Customer Profile
 features_profile = [
     'TENURE_DAYS', 'PRODUCT_SCORE', 'TOTAL_PRODUCT',
     'TOTAL_PRODUCT_EXCL_SERVICES', 'RELATION_DEPTH', 'PREM_BANK',
     'PROD_DIVERSITY', 'CROSS_SELL_SUCCESS'
 ]
 
-# Additional groups as you see fit...
-# Eg: Engagement, Risk, etc.
+features_digital = [
+    'DIGITAL_ENGAGE', 'DIGI_TO_PHYS'
+]
 
+features_balance_dynamics = [
+    'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'BAL_UTIL', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
+]
 
+features_relationship = [
+    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'PRODUCT_SCORE', 'PROD_DIVERSITY',
+    'RELATION_DEPTH', 'PREM_BANK', 'CROSS_SELL_SUCCESS', 'PROD_BAL_INTERACT'
+]
 
+features_risk_dormancy = [
+    'DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
+]
 
-def prepare_radar_data(df, cluster_col, group_features):
-    # Group by cluster and calculate mean
-    cluster_means = df.groupby(cluster_col)[group_features].mean()
-    # Normalize for radar chart plotting (0-1 per feature)
-    cluster_means_norm = (cluster_means - cluster_means.min()) / (cluster_means.max() - cluster_means.min())
-    return cluster_means_norm
+# Combine all features to check mode safely
+all_features = list(set(
+    features_txn + features_balance + features_profile + features_digital +
+    features_balance_dynamics + features_relationship + features_risk_dormancy
+))
 
+# Function to calculate mode per cluster (returns mode's value)
+def cluster_mode(df, features, cluster_col='KmeansCluster'):
+    mode_df = pd.DataFrame()
+    for cluster in sorted(df[cluster_col].unique()):
+        cluster_data = df[df[cluster_col] == cluster][features]
+        # axis=0 computes mode along each column
+        modes = cluster_data.mode().iloc[0]  # mode() returns a dataframe, take first row of mode
+        modes.name = cluster
+        mode_df = pd.concat([mode_df, modes], axis=1)
+    return mode_df.T  # Transpose so clusters are rows
 
+# Prepare containers for results
+summary_stats = {}
 
+groups = {
+    'Transaction Features': features_txn,
+    'Balance & Loyalty': features_balance,
+    'Customer Profile': features_profile,
+    'Digital Engagement': features_digital,
+    'Balance Dynamics': features_balance_dynamics,
+    'Relationship Features': features_relationship,
+    'Risk & Dormancy': features_risk_dormancy
+}
 
-import plotly.graph_objects as go
+for group_name, feature_list in groups.items():
+    print(f"\n--- {group_name} ---")
 
-def plot_cluster_radar(cluster_means_norm, group_name):
-    categories = list(cluster_means_norm.columns)
-    fig = go.Figure()
-    for cluster_id in cluster_means_norm.index:
-        fig.add_trace(go.Scatterpolar(
-            r = cluster_means_norm.loc[cluster_id].values,
-            theta = categories,
-            fill = 'toself',
-            name = f'Cluster {cluster_id}'
-        ))
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0,1])),
-        showlegend=True,
-        title=f"Cluster Behavior: {group_name}"
-    )
-    fig.show()
+    # Mean
+    mean_df = df.groupby('KmeansCluster')[feature_list].mean()
+    print(f"\nMean values by cluster:\n", mean_df)
 
+    # Median
+    median_df = df.groupby('KmeansCluster')[feature_list].median()
+    print(f"\nMedian values by cluster:\n", median_df)
 
+    # Mode
+    mode_df = cluster_mode(df, feature_list, cluster_col='KmeansCluster')
+    print(f"\nMode values by cluster:\n", mode_df)
 
-
-
-
-# Transaction Group Radar
-txn_data = prepare_radar_data(df, 'KmeansCluster', features_txn)
-plot_cluster_radar(txn_data, 'Transaction Features')
-
-# Balance Group Radar
-balance_data = prepare_radar_data(df, 'KmeansCluster', features_balance)
-plot_cluster_radar(balance_data, 'Balance & Growth')
-
-# Profile/Engagement Group Radar
-profile_data = prepare_radar_data(df, 'KmeansCluster', features_profile)
-plot_cluster_radar(profile_data, 'Profile & Engagement')
-
-
-
-
-
+    # Store results if desired
+    summary_stats[group_name] = {
+        'mean': mean_df,
+        'median': median_df,
+        'mode': mode_df
+    }
