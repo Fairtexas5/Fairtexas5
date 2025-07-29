@@ -1,120 +1,82 @@
-features_digital = [
-    'DIGITAL_ENGAGE', 'DIGI_TO_PHYS'
-]
-
-features_balance_dynamics = [
-    'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'BAL_UTIL', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
-]
-
-features_relationship = [
-    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'PRODUCT_SCORE', 'PROD_DIVERSITY',
-    'RELATION_DEPTH', 'PREM_BANK', 'CROSS_SELL_SUCCESS', 'PROD_BAL_INTERACT'
-]
-
-features_risk_dormancy = [
-    'DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
-]
-
-features_growth_consistency = [
-    'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH', 'RTGS_AMT_GROWTH',
-    'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY'
-]
-
-
-
-
-
-
-
-
 import pandas as pd
-from scipy.stats import mode
 
-# Assuming your DataFrame is 'df' and cluster labels in 'KmeansCluster'
+# Assuming your DataFrame is df and cluster labels are in 'KmeansCluster'
+# Replace 'HIGH_VALUE_SCORE' with your actual high value score column name, e.g., 'TRANSACTION_SCORE'
 
-# Feature groups
-features_txn = [
-    'TDV', 'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
-    'TOTAL_RTGS_DR_CNT', 'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT',
-    'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE', 'TXN_FREQ',
-    'AVG_DR_AMT', 'AVG_CR_AMT', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
-]
+high_value_score_col = 'TRANSACTION_SCORE'  # Adjust if your actual high value score column differs
 
-features_balance = [
-    'AQB', 'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'NET_FLOW_AMT', 'BAL_UTIL'
-]
-
-features_profile = [
-    'TENURE_DAYS', 'PRODUCT_SCORE', 'TOTAL_PRODUCT',
-    'TOTAL_PRODUCT_EXCL_SERVICES', 'RELATION_DEPTH', 'PREM_BANK',
-    'PROD_DIVERSITY', 'CROSS_SELL_SUCCESS'
-]
-
-features_digital = [
-    'DIGITAL_ENGAGE', 'DIGI_TO_PHYS'
-]
-
-features_balance_dynamics = [
-    'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'BAL_UTIL', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
-]
-
-features_relationship = [
-    'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES', 'PRODUCT_SCORE', 'PROD_DIVERSITY',
-    'RELATION_DEPTH', 'PREM_BANK', 'CROSS_SELL_SUCCESS', 'PROD_BAL_INTERACT'
-]
-
-features_risk_dormancy = [
-    'DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
-]
-
-# Combine all features to check mode safely
-all_features = list(set(
-    features_txn + features_balance + features_profile + features_digital +
-    features_balance_dynamics + features_relationship + features_risk_dormancy
-))
-
-# Function to calculate mode per cluster (returns mode's value)
-def cluster_mode(df, features, cluster_col='KmeansCluster'):
-    mode_df = pd.DataFrame()
-    for cluster in sorted(df[cluster_col].unique()):
-        cluster_data = df[df[cluster_col] == cluster][features]
-        # axis=0 computes mode along each column
-        modes = cluster_data.mode().iloc[0]  # mode() returns a dataframe, take first row of mode
-        modes.name = cluster
-        mode_df = pd.concat([mode_df, modes], axis=1)
-    return mode_df.T  # Transpose so clusters are rows
-
-# Prepare containers for results
-summary_stats = {}
-
-groups = {
-    'Transaction Features': features_txn,
-    'Balance & Loyalty': features_balance,
-    'Customer Profile': features_profile,
-    'Digital Engagement': features_digital,
-    'Balance Dynamics': features_balance_dynamics,
-    'Relationship Features': features_relationship,
-    'Risk & Dormancy': features_risk_dormancy
+# Define grouped features — choose only relevant and non-overlapping groups with key features
+feature_groups = {
+    'Transaction Features': [
+        'TDV', 'TOTAL_NEFT_DR_AMT', 'TOTAL_NEFT_CNT', 'TOTAL_NEFT_AMT',
+        'TOTAL_RTGS_DR_CNT', 'TOTAL_RTGS_CNT', 'TOTAL_RTGS_AMT',
+        'NEFT_AVG_TXN_VALUE', 'RTGS_AVG_TXN_VALUE', 'TXN_FREQ',
+        'AVG_DR_AMT', 'AVG_CR_AMT', 'NET_FLOW_AMT', 'NET_FLOW_RATIO'
+    ],
+    'Balance & Growth': [
+        'AQB', 'BAL_STAB', 'BAL_GTH_IND', 'MTH_BAL_TREND', 'BAL_UTIL'
+    ],
+    'Customer Engagement': [
+        'PRODUCT_SCORE', 'TOTAL_PRODUCT', 'TOTAL_PRODUCT_EXCL_SERVICES',
+        'RELATION_DEPTH', 'PREM_BANK', 'PROD_DIVERSITY', 'CROSS_SELL_SUCCESS'
+    ],
+    'Digital Engagement': [
+        'DIGITAL_ENGAGE', 'DIGI_TO_PHYS'
+    ],
+    'Risk & Dormancy': [
+        'DORM_RISK', 'SEV_DORM_RISK', 'DAY_SINCE_LST_TXN', 'DAYS_SINCE_LAST_CR', 'DAYS_SINCE_LAST_DR'
+    ],
+    'Loan & Credit': [
+        'LOAN_SOPHISTICATION', 'SEC_LOAN_PREF', 'CR_TO_DR_RATIO'
+    ],
+    'Growth & Consistency': [
+        'NEFT_CNT_GROWTH', 'RTGS_CNT_GROWTH', 'RTGS_AMT_GROWTH', 'NEFT_CONSISTENCY', 'RTGS_CONSISTENCY'
+    ],
+    'Customer Profile': [
+        'TENURE_DAYS', 'CUST_AGE'
+    ]
 }
 
-for group_name, feature_list in groups.items():
-    print(f"\n--- {group_name} ---")
+# Add High Value Score as a separate group for easy reference
+feature_groups['High Value Score'] = [high_value_score_col]
 
-    # Mean
-    mean_df = df.groupby('KmeansCluster')[feature_list].mean()
-    print(f"\nMean values by cluster:\n", mean_df)
+# Function to calculate mean and median per cluster for grouped features
+def clustered_summary(df, cluster_col, grouped_features):
+    mean_dfs = []
+    median_dfs = []
 
-    # Median
-    median_df = df.groupby('KmeansCluster')[feature_list].median()
-    print(f"\nMedian values by cluster:\n", median_df)
+    for group_name, features in grouped_features.items():
+        # Filter existing features only to avoid errors
+        valid_features = [f for f in features if f in df.columns]
+        
+        if not valid_features:
+            continue
+        
+        mean_df = df.groupby(cluster_col)[valid_features].mean()
+        mean_df.columns = [f"{group_name} - Mean - {col}" for col in mean_df.columns]
+        
+        median_df = df.groupby(cluster_col)[valid_features].median()
+        median_df.columns = [f"{group_name} - Median - {col}" for col in median_df.columns]
+        
+        mean_dfs.append(mean_df)
+        median_dfs.append(median_df)
+    
+    # Combine horizontally (by columns)
+    combined_mean = pd.concat(mean_dfs, axis=1)
+    combined_median = pd.concat(median_dfs, axis=1)
 
-    # Mode
-    mode_df = cluster_mode(df, feature_list, cluster_col='KmeansCluster')
-    print(f"\nMode values by cluster:\n", mode_df)
+    return combined_mean, combined_median
 
-    # Store results if desired
-    summary_stats[group_name] = {
-        'mean': mean_df,
-        'median': median_df,
-        'mode': mode_df
-    }
+# Run summary
+mean_summary, median_summary = clustered_summary(df, 'KmeansCluster', feature_groups)
+
+# Optionally, show or export
+print("=== Combined Mean Summary by Cluster ===")
+print(mean_summary)
+
+print("\n=== Combined Median Summary by Cluster ===")
+print(median_summary)
+
+# Save CSV if needed
+# mean_summary.to_csv('clustered_mean_summary.csv')
+# median_summary.to_csv('clustered_median_summary.csv')
