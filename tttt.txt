@@ -1,8 +1,5 @@
 from sklearn.preprocessing import MinMaxScaler
 
-df['AMT_CUST_DATA'] = df['AVG_DR_AMT'] + df['AVG_CR_AMT'] + df['TDV'] + df['AQB']
-
-
 score_features = [
     'TRANSACTION_SCORE',
     'TOTAL_TRANS_AMT',
@@ -31,12 +28,35 @@ weights = {
     'TOTAL_DORM_RISK_SCALED':      -0.10 # negative if risk is bad
 }
 
-# Weighted sum
+# Weighted score calculation
 df_scaled['CUSTOMER_SCORE'] = sum(
     weights[feat] * df_scaled[feat] for feat in weights
 )
 
-# Optional: Scale to 0-100
+# Optionally scale score to 0-100 for business-friendliness
 df_scaled['CUSTOMER_SCORE'] = 100 * (df_scaled['CUSTOMER_SCORE'] - df_scaled['CUSTOMER_SCORE'].min()) / (df_scaled['CUSTOMER_SCORE'].max() - df_scaled['CUSTOMER_SCORE'].min() + 1e-6)
 
-print(df_scaled[['CUSTOMER_SCORE'] + scaled_features].head())
+
+
+# List of features to aggregate per cluster
+summary_features = ['CUSTOMER_SCORE'] + scaled_features
+
+
+
+# Mean by cluster
+mean_by_cluster = df_scaled.groupby('KmeansCluster')[summary_features].mean()
+
+# Median by cluster
+median_by_cluster = df_scaled.groupby('KmeansCluster')[summary_features].median()
+
+# Optional: Sorting by cluster number
+mean_by_cluster = mean_by_cluster.sort_index(ascending=True)
+median_by_cluster = median_by_cluster.sort_index(ascending=True)
+
+print("=== Mean (per feature) by Cluster ===")
+print(mean_by_cluster)
+
+print("\n=== Median (per feature) by Cluster ===")
+print(median_by_cluster)
+
+
