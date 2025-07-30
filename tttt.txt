@@ -1,18 +1,16 @@
-import plotly.graph_objects as go
+def prepare_radar_data(df, cluster_col, group_features):
+    df_clean = df[[cluster_col] + group_features].copy()
+    df_clean[group_features] = df_clean[group_features].fillna(0)  # Fill missing values
 
-def plot_cluster_radar(cluster_means_norm, group_name):
-    categories = list(cluster_means_norm.columns)
-    fig = go.Figure()
-    for cluster_id in cluster_means_norm.index:
-        fig.add_trace(go.Scatterpolar(
-            r = cluster_means_norm.loc[cluster_id].values,
-            theta = categories,
-            fill = 'toself',
-            name = f'Cluster {cluster_id}'
-        ))
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0,1])),
-        showlegend=True,
-        title=f"Cluster Behavior: {group_name}"
-    )
-    fig.show()
+    # Group by cluster and calculate mean
+    cluster_means = df_clean.groupby(cluster_col)[group_features].mean()
+
+    # Normalize across each feature (0-1)
+    min_vals = cluster_means.min()
+    max_vals = cluster_means.max()
+    range_vals = max_vals - min_vals
+    range_vals[range_vals == 0] = 1e-9  # avoid division by zero
+
+    cluster_means_norm = (cluster_means - min_vals) / range_vals
+
+    return cluster_means_norm
