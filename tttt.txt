@@ -1,30 +1,42 @@
-import plotly.express as px
-import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
 
-def plot_cluster_radar(cluster_means_norm, group_name):
-    # Reshape data for px.line_polar
-    data = []
-    categories = list(cluster_means_norm.columns)
-    
-    for cluster_id in cluster_means_norm.index:
-        for category in categories:
-            data.append({
-                'cluster': f'Cluster {cluster_id}',
-                'category': category,
-                'value': cluster_means_norm.loc[cluster_id, category]
-            })
-    
-    df = pd.DataFrame(data)
-    
-    fig = px.line_polar(
-        df, 
-        r='value', 
-        theta='category',
-        color='cluster',
-        line_close=True,
-        range_r=[0, 1],
-        title=f"Cluster Behavior: {group_name}"
-    )
-    
-    fig.update_traces(fill='toself')
-    fig.show()
+df['AMT_CUST_DATA'] = df['AVG_DR_AMT'] + df['AVG_CR_AMT'] + df['TDV'] + df['AQB']
+
+
+score_features = [
+    'TRANSACTION_SCORE',
+    'TOTAL_TRANS_AMT',
+    'TOTAL_TRANS_CNT',
+    'AVG_TXN_VALUE_COMBINED',
+    'BAL_GROWTH_STAB',
+    'ENGAGEMENT_SCORE',
+    'LOAN_PREF_INDEX',
+    'TOTAL_DORM_RISK'
+]
+
+# Min-max scaling
+scaler = MinMaxScaler()
+df_scaled = df.copy()
+df_scaled[[f + '_SCALED' for f in score_features]] = scaler.fit_transform(df[score_features])
+scaled_features = [f + '_SCALED' for f in score_features]
+
+weights = {
+    'TRANSACTION_SCORE_SCALED':     0.20,
+    'TOTAL_TRANS_AMT_SCALED':       0.18,
+    'TOTAL_TRANS_CNT_SCALED':       0.13,
+    'AVG_TXN_VALUE_COMBINED_SCALED':0.10,
+    'BAL_GROWTH_STAB_SCALED':       0.10,
+    'ENGAGEMENT_SCORE_SCALED':      0.12,
+    'LOAN_PREF_INDEX_SCALED':       0.07,
+    'TOTAL_DORM_RISK_SCALED':      -0.10 # negative if risk is bad
+}
+
+# Weighted sum
+df_scaled['CUSTOMER_SCORE'] = sum(
+    weights[feat] * df_scaled[feat] for feat in weights
+)
+
+# Optional: Scale to 0-100
+df_scaled['CUSTOMER_SCORE'] = 100 * (df_scaled['CUSTOMER_SCORE'] - df_scaled['CUSTOMER_SCORE'].min()) / (df_scaled['CUSTOMER_SCORE'].max() - df_scaled['CUSTOMER_SCORE'].min() + 1e-6)
+
+print(df_scaled[['CUSTOMER_SCORE'] + scaled_features].head())
