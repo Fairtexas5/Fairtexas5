@@ -1,16 +1,30 @@
-def prepare_radar_data(df, cluster_col, group_features):
-    df_clean = df[[cluster_col] + group_features].copy()
-    df_clean[group_features] = df_clean[group_features].fillna(0)  # Fill missing values
+import plotly.express as px
+import pandas as pd
 
-    # Group by cluster and calculate mean
-    cluster_means = df_clean.groupby(cluster_col)[group_features].mean()
-
-    # Normalize across each feature (0-1)
-    min_vals = cluster_means.min()
-    max_vals = cluster_means.max()
-    range_vals = max_vals - min_vals
-    range_vals[range_vals == 0] = 1e-9  # avoid division by zero
-
-    cluster_means_norm = (cluster_means - min_vals) / range_vals
-
-    return cluster_means_norm
+def plot_cluster_radar(cluster_means_norm, group_name):
+    # Reshape data for px.line_polar
+    data = []
+    categories = list(cluster_means_norm.columns)
+    
+    for cluster_id in cluster_means_norm.index:
+        for category in categories:
+            data.append({
+                'cluster': f'Cluster {cluster_id}',
+                'category': category,
+                'value': cluster_means_norm.loc[cluster_id, category]
+            })
+    
+    df = pd.DataFrame(data)
+    
+    fig = px.line_polar(
+        df, 
+        r='value', 
+        theta='category',
+        color='cluster',
+        line_close=True,
+        range_r=[0, 1],
+        title=f"Cluster Behavior: {group_name}"
+    )
+    
+    fig.update_traces(fill='toself')
+    fig.show()
