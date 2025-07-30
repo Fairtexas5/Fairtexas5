@@ -1,13 +1,13 @@
 import plotly.graph_objects as go
 
-def plot_cluster_polar_lines(cluster_means_norm, group_name):
+def plot_cluster_radar(cluster_means_norm, group_name):
     categories = list(cluster_means_norm.columns)
     fig = go.Figure()
     for cluster_id in cluster_means_norm.index:
         fig.add_trace(go.Scatterpolar(
             r = cluster_means_norm.loc[cluster_id].values,
             theta = categories,
-            mode = 'lines+markers',  # Optional: add markers for clarity
+            fill = 'toself',
             name = f'Cluster {cluster_id}'
         ))
     fig.update_layout(
