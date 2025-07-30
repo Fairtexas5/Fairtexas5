@@ -1,23 +1,18 @@
-def scale_0_100(df):
-    return (df - df.min()) / (df.max() - df.min()) * 100
+import plotly.graph_objects as go
 
-mean_summary = df.groupby('KmeansCluster')[summary_features].mean()
-median_summary = df.groupby('KmeansCluster')[summary_features].median()
-mean_summary_scaled = scale_0_100(mean_summary)
-median_summary_scaled = scale_0_100(median_summary)
-print(mean_summary_scaled)
-print(median_summary_scaled)
-
-
-# Sort mean summary by cluster ascending
-mean_summary_sorted = mean_summary_scaled.sort_index(ascending=True)
-
-# Sort median summary by cluster ascending
-median_summary_sorted = median_summary_scaled.sort_index(ascending=True)
-
-print("=== Mean Summary by Cluster (Sorted Ascending) ===")
-print(mean_summary_sorted)
-
-print("\n=== Median Summary by Cluster (Sorted Ascending) ===")
-print(median_summary_sorted)
-
+def plot_cluster_polar_lines(cluster_means_norm, group_name):
+    categories = list(cluster_means_norm.columns)
+    fig = go.Figure()
+    for cluster_id in cluster_means_norm.index:
+        fig.add_trace(go.Scatterpolar(
+            r = cluster_means_norm.loc[cluster_id].values,
+            theta = categories,
+            mode = 'lines+markers',  # Optional: add markers for clarity
+            name = f'Cluster {cluster_id}'
+        ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0,1])),
+        showlegend=True,
+        title=f"Cluster Behavior: {group_name}"
+    )
+    fig.show()
