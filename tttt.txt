@@ -1,35 +1,21 @@
-import plotly.express as px
-# Sample a subset to plot, or aggregate before plotting
-sample_df = df.sample(n=10000, random_state=1)
-fig = px.histogram(sample_df, x='END_OF_DAY_BAL', nbins=100)
-fig.show()
-
-
-# Density heatmap
-import plotly.express as px
-fig = px.density_heatmap(df, x="AVG_BAL_MTD", y="AVG_BAL_YTD", nbinsx=60, nbinsy=60)
-fig.show()
-
-# Treemap
-fig = px.treemap(df, path=['CUST_CAT', 'CUST_CLASS'], values='END_OF_DAY_BAL')
-fig.show()
-
-# Sankey (for flows, e.g. fund transfers)
-import plotly.graph_objects as go
-fig = go.Figure(data=[go.Sankey(...)])
-fig.show()
-
-# Parallel coordinates
-fig = px.parallel_coordinates(df.sample(10000), color='HOME_LOAN_AMT')
-fig.show()
-
-
-
+import pandas as pd
 import plotly.express as px
 
-# Group and plot
-bar_df = df.groupby('CUST_CAT')['END_OF_DAY_BAL'].mean().sort_values().reset_index()
-fig = px.bar(bar_df, x='CUST_CAT', y='END_OF_DAY_BAL', title='Avg Balance by Customer Category')
+# Assume df is your DataFrame
 
-# Save as static image for PPT
-fig.write_image("avg_balance_per_category.png")
+# Take a 0.1% sample (minute sample)
+sample_df = df.sample(frac=0.001, random_state=42)
+
+# Select 10 representative numeric columns
+cols = [
+    'END_OF_DAY_BAL', 'INT_AVLABL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
+    'DR_AMT', 'CR_AMT', 'SAVINGS_BANK', 'FD', 'CA'
+]
+
+# Melt for boxplot
+melt_df = sample_df[cols].melt(var_name='Variable', value_name='Value')
+
+# Plotly boxplot
+fig = px.box(melt_df, x="Variable", y="Value", points="outliers")
+fig.show()
+
