@@ -51,3 +51,118 @@ Slide 8: Identifying High Value Segments
 
 
 
+
+
+
+
+Abstract
+During my internship at State Bank of India (SBI), I had the opportunity to work on a behavioral segmentation model aimed at identifying and profiling high-value customers. As a BTech student stepping into the world of banking and data science, this real-world experience was both exciting and challenging. In today’s competitive banking sector, understanding customer behavior is essential for building strong relationships and promoting growth.
+
+The main goal of my project was to create a data-driven approach to segment customers based on behavior, transactions, and product usage. I worked with large datasets that included millions of customer records, covering transaction patterns, channel interactions, demographics, and product engagement. To manage this effectively, I used a 25% data sample.
+
+I began with data cleaning and preparation, followed by engineering features like high-value transactions, spending habits, channel preferences, and product bundling trends. These features helped distinguish between different customer groups.
+To visualize the complex data, I applied dimensionality reduction techniques like PCA and t-SNE. Then, using K-Means clustering, I identified natural groupings among customers. Each cluster was analyzed to understand their behavior, value, and how SBI could engage with them more effectively.
+
+The final model enabled SBI to gain deeper insights into customer relationships, helping to identify high-value customers and support growth-focused strategies. The model is a strong foundation and can be refined further for even better results.
+
+This internship was a great learning experience. I applied Python, pandas, scikit-learn, seaborn, and matplotlib to a real business problem, gained exposure to BI tools, and sharpened my communication with stakeholders. Most importantly, I learned how impactful data science can be in driving smart, customer-focused decisions. This experience has boosted my confidence and strengthened my passion for solving meaningful problems using data.
+
+
+Introduction
+
+My internship at the State Bank of India (SBI) was a truly eye-opening and rewarding journey that gave me hands-on experience with how AI and data analytics are used in real banking environments. I started in June, 2025 as a final year BTech student, and what began as simple data-related tasks soon transformed into a important project on behavioral segmentation of high-value customers. This experience let me see the real-world impact data science can have on customer relationship management and helped me develop important technical and analytical abilities for today’s business world.
+
+In the beginning, I spent time learning about the different types of customer data SBI had, checking its quality, and getting comfortable with core Python tools like pandas, NumPy, and matplotlib. My early work was focused on basic data handling—cleaning, organizing, and creating simple visualizations to spot patterns in customer behavior. As I gained more confidence and domain knowledge, I moved on to tougher tasks like engineering new features, combining datasets from different sources, and preparing the right data for modeling.
+
+The main project I worked on aimed to segment SBI’s retail customers based on how they behave and the transactions they make. This would help the bank spot and better connect with high-value customer groups. To do this, I used unsupervised machine learning, especially K-Means clustering, and used tools like PCA and t-SNE to make sense of the complex data. This process pushed me to think through the challenges of handling multi-dimensional data and finding ways to turn raw clusters into useful, practical insights.
+
+One of the highlights of my internship was the support I got from experienced data science mentors at SBI. Their guidance helped me move from classroom theory to practical solutions, and regular feedback and team discussions gave me confidence to solve business problems and grow as a professional.
+
+
+
+
+
+
+
+
+
+
+
+
+Problem Statement
+
+The main goal of this project was to build a solid, data-driven approach to segment and pinpoint high-value customers from a huge customer base at SBI, using unsupervised machine learning. With more than 2.3 million customers in the full dataset, the segmentation process relied on a detailed study of behavioral trends pulled from transactional, account, and customer data. By discovering groups of customers who share similar characteristics, the project helps SBI personalize outreach, boost cross-selling, and improve retention efforts.
+
+Key Objectives:
+
+Identify clusters containing high-value customers, enabling more targeted and relevant marketing.
+
+Reveal the behavioral traits that drive customer value in different segments.
+
+Support better strategic decisions by supplying actionable insights from customer segmentation.
+
+Tools and Techniques Used
+Programming & Analysis Environment:
+
+Jupyter Notebook was used for all phases—from exploring the data and building models, to presenting the final results.
+
+Languages & Libraries:
+
+Python: The main language for all data handling and analysis.
+
+NumPy & Pandas: For number crunching and easy manipulation of structured data.
+
+Scikit-learn: Used for machine learning, especially clustering and dimensionality reduction techniques.
+
+Seaborn & Matplotlib: Essential for creating clear, insightful visualizations during the analysis.
+
+Data Processing & Modeling Techniques:
+
+SQL: To extract relevant data efficiently from SBI’s relational databases.
+
+Feature Engineering: Transformed raw banking data into meaningful features that reflect customer behavior.
+
+Weighted Scoring: Prioritized the importance of different features for modeling.
+
+Dimensionality Reduction: Employed techniques like t-SNE and Kernel PCA for visualizing patterns and clusters in high-dimensional data.
+
+Clustering Algorithms: Mainly K-Means, to group customers into naturally similar segments.
+
+Architectural Overview
+Dataset & Features
+Sample Size: 500,000 customers (representing over 20% of the total base of 2.3 million customers)
+
+Feature Breakdown:
+
+91 behavioral and account-based features (for example, types of products held, account usage activity)
+
+26 transaction-focused features (such as frequency, transaction amounts, and preferred banking channels)
+
+5 demographic/personal features (including age and the length of time the customer has been with the bank)
+
+Integration: Pulled and merged data across multiple sources using customer and account IDs to create a unified view for each customer.
+
+Workflow Overview
+Data Extraction & Integration:
+Pulled data from several sources—recent transaction logs (last 3 months), account statements, and the master list of customers.
+
+Data Cleaning & Quality Assurance:
+Tackled missing data with imputation and robust weighting. Ensured features were reliable and consistent for modeling.
+
+Multi-Level Aggregation:
+Combined transaction- and account-level data to form a master record at the customer level.
+
+Feature Engineering:
+Developed and normalized new metrics (like spending scores and activity indexes), and removed feature overlaps to make the clusters meaningful.
+
+Dimensionality Reduction:
+Applied t-SNE and Kernel PCA. This helped shrink down the hundreds of features into manageable dimensions for both visualization and better clustering results.
+
+Customer Segmentation:
+Used K-Means clustering to sort customers into behavioral groups, especially focusing on isolating segments with high-value behaviors.
+
+This project not only highlighted how advanced analytics can deliver business impact in banking, but also allowed me, as a BTech intern, to practically apply and learn from real data scenarios—combining technical skills in Python and machine learning with business insight and customer understanding.
+
+
+
+
