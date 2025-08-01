@@ -1,132 +1,367 @@
-if 'ACT_LVL' in df_customer.columns:
-    print("\nPer activity level statistics:")
-    grouped = df_customer.groupby('ACT_LVL').agg({
-        'TXN_FREQ': 'mean',
-        'TOTAL_PRODUCT': 'mean',
-        'DIGITAL_ENGAGE': 'mean'
-    })
-    # Renaming columns for clarity if you want
-    grouped = grouped.rename(columns={
-        'TXN_FREQ': 'Avg Transaction Frequency',
-        'TOTAL_PRODUCT': 'Avg Products per Customer',
-        'DIGITAL_ENGAGE': 'Avg Digital Engagement'
-    })
-    print(grouped.round(2))
+1. Data Acquisition
+
+The first step in the architecture was data acquisition, which involved sourcing and consolidating raw customer information from various internal databases. Given that machine learning models rely heavily on the quantity and quality of available data, this stage aimed to ensure comprehensive and relevant data collection. In our case, customer data spanning a six-month period—from April 2023 to September 2023—was extracted for analysis.
+
+This data included:
+
+Transaction-level data (e.g., frequency, amount, channel)
+
+Account and product-level data
+
+Demographic and customer master information
+
+
+The acquired data was structured, aggregated, and prepared for further transformation. In some cases, this phase is referred to as data pre-processing, as it lays the groundwork for all subsequent steps in the machine learning pipeline. The data was expected to be consistent, high-resolution, and scalable, encompassing both continuous and categorical variables.
+
+
+---
+
+2. Data Processing
+
+Following acquisition, the data was passed into the data processing layer, where several transformation and cleaning steps were performed to prepare it for modeling. This stage included:
+
+Data normalization to standardize variable ranges
+
+Missing value imputation using default or zero-value placeholders
+
+Data encoding for categorical fields using label encoding or one-hot encoding
+
+Format harmonization across datasets to ensure seamless integration
+
+
+Although supervised learning typically requires labeled datasets and splitting into training and testing sets, this project employed unsupervised learning. As such, the focus was on ensuring the consistency and usability of all features across the full customer base.
+
+
+---
+
+3. Outlier Detection and Treatment
+
+Real-world financial datasets often exhibit skewness and contain outliers, which, if left untreated, can distort clustering results. In this stage, we employed Interquartile Range (IQR) analysis to detect and cap extreme values. Specifically:
+
+Outliers were identified as values falling outside the [Q1 - 1.5 * IQR, Q3 + 1.5 * IQR] range.
+
+These extreme values were then capped at the lower and upper bounds to minimize their influence while preserving relative behavior.
+
+In cases of missing values, fields were replaced with zero or domain-relevant defaults, depending on feature significance.
+
+
+This step was essential for ensuring robust, noise-free input for the clustering algorithm.
+
+
+---
+
+4. Feature Engineering
+
+Feature engineering is one of the most critical stages in any machine learning pipeline. It involves transforming raw input variables into structured features that improve model performance and interpretability. In this project, feature engineering involved:
+
+Aggregating transactional metrics at the customer level (e.g., total spend, transaction frequency)
+
+Creating behavioral indicators such as product bundling, channel preference, and tenure
+
+Reducing feature redundancy by addressing multicollinearity and normalizing skewed distributions
+
+Generating domain-informed features to improve the clustering quality
+
+
+The goal was to extract and curate a set of variables that best captured the latent behavior of each customer. These engineered features became the input for dimensionality reduction and clustering in later stages.
+
+same like above
+
+Certainly! Here's a humanized and cohesive write-up of the four technical sections — **Data Acquisition**, **Data Processing**, **Outlier Detection and Treatment**, and **Feature Engineering** — written in the same tone and style as the previous responses, tailored for a BTech intern's project report.
+
+### 1. Data Acquisition
+
+The first step in the project architecture was data acquisition, where I collected and consolidated raw customer data from SBI’s internal systems. Since machine learning models heavily depend on the quality, quantity, and relevance of the input data, this phase was crucial for laying a strong foundation. The data sourced covered a six-month period, from April 2023 to September 2023.
+
+The datasets included:
+- **Transaction-level records** – capturing information like frequency, amount, and channel of banking transactions.
+- **Account-level and product-level data** – reflecting how customers use various SBI products.
+- **Customer master and demographic details** – such as age, gender, and relationship duration.
+
+These datasets were pulled from different databases and structured to form a consistent, unified dataset for each customer. In many ways, this stage overlapped with early pre-processing, as I ensured that the data was structured, relevant, and of sufficient resolution for effective analysis later in the pipeline.
+
+### 2. Data Processing
+
+After collecting the data, the next step was preparing it for analysis. This “data processing” phase involved cleaning, converting, and aligning the datasets so that they would be compatible with machine learning models. Key steps included:
+
+- **Normalization** – To bring all numerical features onto a common scale for fair comparison.
+- **Missing value handling** – Filling gaps using default values (like zeros) or logic-based replacements, depending on the feature.
+- **Encoding categorical variables** – Converting data like product types or channels into numerical form using label or one-hot encoding.
+- **Harmonizing data formats** – Ensuring date formats, column names, and data types matched across sources to enable seamless merging.
+
+Since the project used *unsupervised learning*, there was no need for training and testing data splits. Instead, the main focus here was to ensure that all features were reliable, interpretable, and uniformly scaled before clustering.
+
+### 3. Outlier Detection and Treatment
+
+Real banking data isn't always clean—some fields can show extreme spikes or drops that can affect model accuracy. To address this, I implemented a basic *outlier treatment* method using the **Interquartile Range (IQR)** technique.
+
+- Any value beyond **[Q1 - 1.5 × IQR, Q3 + 1.5 × IQR]** was considered an outlier.
+- These outliers were then **capped** at the lower or upper bound of the range to reduce their impact.
+- For fields still missing values (after acquisition), I either filled them with zero or applied domain-informed defaults—for example, assigning minimum account activity to indicate inactivity.
+
+Outlier treatment was important for maintaining the stability of clusters and avoiding biases caused by anomalies in customer behavior or recording errors.
+
+### 4. Feature Engineering
+
+Feature engineering turned out to be one of the most insightful and creatively demanding parts of the project. This phase involved deriving new indicators that better captured customers’ actual behavior and value, beyond what raw data could show. Some of the techniques I used included:
+
+- **Aggregating transactional data** at the customer level to create features like total spend over six months, transaction count, and average transaction value.
+- **Creating behavioral features** such as:
+  - *Product bundling* – whether a customer uses multiple SBI products.
+  - *Channel preference* – identifying customers who preferred digital banking over physical branches.
+  - *Relationship tenure* – number of months/years the customer has been with SBI.
+- **Handling multicollinearity**, smoothing skewed distributions, and dropping redundant fields to simplify the feature space and ensure each variable added unique value.
+- **Introducing domain-specific metrics**, such as engagement scores or transaction volatility, designed with help from mentors and domain experts.
+
+In the end, these engineered features served as the main inputs for dimensionality reduction techniques (like t-SNE and Kernel PCA) and clustering, helping uncover meaningful customer segments based on data-driven behavioral patterns.
 
 
 
 
+5. Data Modelling
+
+The data modeling phase represents the execution and experimentation stage of the machine learning pipeline. It is during this phase that algorithms are selected, parameters are tuned, and different configurations are tested to develop a model capable of uncovering meaningful patterns in the data. The objective of modeling in this project was to segment customers based on behavioral similarities, identify high-value groups, and provide the business with actionable insights for targeting and engagement.
+
+Given the unsupervised learning nature of the problem—where no labeled outputs were available—the focus was on clustering customers based on their behavioral traits, without prior knowledge of segment definitions. The modeling workflow involved two core components:
+
+
+---
+
+A. Dimensionality Reduction using t-SNE
+
+t-Distributed Stochastic Neighbor Embedding (t-SNE) was used to reduce high-dimensional feature space into a two- or three-dimensional representation suitable for visualization and clustering analysis. With over 120 engineered features (behavioral, transactional, and demographic), visualizing the data in its raw form was infeasible.
+
+Key roles of t-SNE in the project:
+
+Captured local relationships in the data, enabling visual interpretation of customer groupings.
+
+Assisted in validating clustering tendencies and patterns before applying clustering algorithms.
+
+Improved separation and interpretability of clusters when plotted in 2D space.
+
+
+t-SNE does not preserve global distances but excels at retaining local structure, making it highly effective for understanding natural cluster formation in behavioral data.
+
+
+---
+
+B. Customer Segmentation using K-Means Clustering
+
+The primary algorithm used for modeling was K-Means clustering, a popular and efficient method for partitioning data into distinct, non-overlapping groups.
+
+Overview of K-Means:
+
+The algorithm aims to partition data into K clusters such that the within-cluster variance is minimized.
+
+It follows an iterative Expectation-Maximization process:
+
+Expectation step (E-step): Assign each data point to the nearest cluster centroid.
+
+Maximization step (M-step): Recompute centroids based on the assigned data points.
+
+
+The process continues until convergence, typically when centroids no longer change significantly or a maximum number of iterations is reached.
+
+
+Challenges & Handling:
+
+Random initialization of centroids can cause K-Means to converge to a local optimum. To address this, multiple initializations were tested using the k-means++ strategy for better centroid seeding.
+
+The optimal value of K was determined using the Elbow Method and Silhouette Score, balancing interpretability with cluster separation quality.
+
+
+Outcomes:
+
+The final model identified distinct customer segments characterized by behavioral intensity, product usage, transaction frequency, and digital channel preferences.
+
+High-value segments exhibited consistent and multi-product engagement, longer tenure, and high transaction volume—insights that were used to inform marketing and retention strategies.
+
+### 5. Data Modeling
+
+The data modeling phase was where the core machine learning techniques came into action, transforming all the preparation and feature engineering into actionable business insights for SBI. Here, I focused on clustering our customer base to discover behaviorally distinct segments—with a special emphasis on groups of high-value customers. Since the problem involved *unsupervised learning* (no predefined labels), the goal was to naturally find and profile meaningful customer clusters based entirely on their behavioral signals.
+
+#### A. Dimensionality Reduction with t-SNE
+
+Managing and making sense of more than 120 engineered features can be overwhelming, so the first step in modeling was **dimensionality reduction** using t-Distributed Stochastic Neighbor Embedding (t-SNE). This technique was used to project high-dimensional data (including behavioral, transactional, and demographic variables) into two or three dimensions for better visualization and analysis.
+
+- t-SNE excels at capturing **local patterns** within the data—making it easier to spot groupings or “natural clusters” of customers with similar traits.
+- It helped confirm whether the customer data had a tendency to form distinct segments before applying any formal clustering algorithm.
+- Visualizing the data after t-SNE improved separation between clusters and provided quick interpretability of customer relationships.
+
+While t-SNE prioritizes preserving the local structure rather than overall (global) distance, it is highly effective for examining potential clusters in complex behavioral datasets like ours.
+
+#### B. Customer Segmentation with K-Means Clustering
+
+Once the data was in a workable, lower-dimensional format, I used **K-Means clustering**—a tried-and-tested method for grouping observations based on similarity.
+
+How K-Means works:
+- The algorithm splits data into **K groups** (“clusters”), aiming to minimize the differences within each group.
+- It follows a repetitive cycle:
+  - **E-step:** Each customer is assigned to the nearest cluster “center”.
+  - **M-step:** Recalculate the cluster centers based on their members, then repeat.
+
+To ensure the best results:
+- I used the **k-means++ strategy** for smarter initial placement of cluster centers, reducing the risk of stopping at suboptimal solutions.
+- I experimented with different values of **K** (number of clusters), choosing an optimal number with the help of the **Elbow Method** and **Silhouette Score** for a balance between simplicity and clear segment separation.
+
+**What the modeling achieved:**
+- The final clustering model uncovered unique customer segments defined by behavioral activity, product engagement, transaction patterns, and channel preferences.
+- High-value clusters showed strong, frequent use of multiple products, long-standing relationships with SBI, and greater use of digital channels.
+- These insights made it possible for SBI to design highly targeted outreach and retention strategies aimed at the most valuable customer segments.
+
+This hands-on modeling phase not only deepened my understanding of applied machine learning, but also drove real business insight—showing how data-driven segmentation can power smarter banking decisions and customer engagement.
 
 
 
-Abstract
-During my internship at State Bank of India (SBI), I had the opportunity to work on a behavioral segmentation model aimed at identifying and profiling high-value customers. As a BTech student stepping into the world of banking and data science, this real-world experience was both exciting and challenging. In today’s competitive banking sector, understanding customer behavior is essential for building strong relationships and promoting growth.
 
-The main goal of my project was to create a data-driven approach to segment customers based on behavior, transactions, and product usage. I worked with large datasets that included millions of customer records, covering transaction patterns, channel interactions, demographics, and product engagement. To manage this effectively, I used a 25% data sample.
+Problems Faced
 
-I began with data cleaning and preparation, followed by engineering features like high-value transactions, spending habits, channel preferences, and product bundling trends. These features helped distinguish between different customer groups.
-To visualize the complex data, I applied dimensionality reduction techniques like PCA and t-SNE. Then, using K-Means clustering, I identified natural groupings among customers. Each cluster was analyzed to understand their behavior, value, and how SBI could engage with them more effectively.
+One of the most challenging aspects of this project was managing and preparing a large and complex dataset for unsupervised learning. With a sample size of 500,000 customers drawn from a base of over 2.3 million, the process of data cleaning, transformation, and validation was both time-consuming and computationally intensive.
 
-The final model enabled SBI to gain deeper insights into customer relationships, helping to identify high-value customers and support growth-focused strategies. The model is a strong foundation and can be refined further for even better results.
+A major issue encountered was the presence of outliers and skewed distributions in transactional features such as transfer amounts, frequency counts, and account balances. These extreme values had the potential to distort clustering outcomes, mislead distance calculations (especially in algorithms like K-Means), and reduce the interpretability of behavioral segments.
 
-This internship was a great learning experience. I applied Python, pandas, scikit-learn, seaborn, and matplotlib to a real business problem, gained exposure to BI tools, and sharpened my communication with stakeholders. Most importantly, I learned how impactful data science can be in driving smart, customer-focused decisions. This experience has boosted my confidence and strengthened my passion for solving meaningful problems using data.
+However, the treatment of outliers had to be approached carefully:
 
+Simply removing outliers was not a viable solution, as these values might represent genuine customer behavior—especially in the case of large businesses or high-net-worth individuals.
 
-Introduction
-
-My internship at the State Bank of India (SBI) was a truly eye-opening and rewarding journey that gave me hands-on experience with how AI and data analytics are used in real banking environments. I started in June, 2025 as a final year BTech student, and what began as simple data-related tasks soon transformed into a important project on behavioral segmentation of high-value customers. This experience let me see the real-world impact data science can have on customer relationship management and helped me develop important technical and analytical abilities for today’s business world.
-
-In the beginning, I spent time learning about the different types of customer data SBI had, checking its quality, and getting comfortable with core Python tools like pandas, NumPy, and matplotlib. My early work was focused on basic data handling—cleaning, organizing, and creating simple visualizations to spot patterns in customer behavior. As I gained more confidence and domain knowledge, I moved on to tougher tasks like engineering new features, combining datasets from different sources, and preparing the right data for modeling.
-
-The main project I worked on aimed to segment SBI’s retail customers based on how they behave and the transactions they make. This would help the bank spot and better connect with high-value customer groups. To do this, I used unsupervised machine learning, especially K-Means clustering, and used tools like PCA and t-SNE to make sense of the complex data. This process pushed me to think through the challenges of handling multi-dimensional data and finding ways to turn raw clusters into useful, practical insights.
-
-One of the highlights of my internship was the support I got from experienced data science mentors at SBI. Their guidance helped me move from classroom theory to practical solutions, and regular feedback and team discussions gave me confidence to solve business problems and grow as a professional.
+Over-treating or capping too aggressively could suppress meaningful variations in behavior and lead to the formation of artificial clusters.
 
 
+To address this, I experimented with multiple outlier detection and treatment strategies, such as IQR-based capping, log transformations, and feature-specific thresholds, while validating their effects visually and statistically. Striking the right balance between preserving data integrity and ensuring statistical robustness was one of the most technically demanding parts of the project.
+
+Additionally, integrating data from multiple sources (transaction history, account-level information, and customer master data) introduced challenges related to:
+
+Feature redundancy
+
+Null value alignment
+
+Collinearity among variables, which had to be resolved through careful feature engineering and selection.
+
+### Problems Faced
+
+Working on this project came with several technical and practical challenges, particularly due to the scale and complexity of the data involved. With a sample of 500,000 customers pulled from a much larger base of over 2.3 million, preparing the dataset for unsupervised learning took significant time and effort—especially in the areas of cleaning, transforming, and validating the data.
+
+One of the most difficult aspects was handling **outliers and skewed distributions**, especially in key transactional features like:
+- Transfer amounts  
+- Transaction frequencies  
+- Account balances  
+
+These outliers could seriously impact the performance of clustering algorithms like **K-Means**, which rely on distance-based metrics that are sensitive to extreme values. If left untreated, such skewed data could mislead the algorithm, distort the centroids, and reduce the clarity and business relevance of the customer segments.
+
+However, this wasn't a case of simply removing outliers:
+- Some of these high values were **genuine**—like large transactions made by high-net-worth individuals or SMEs—which provided valuable insights into behavioral patterns.
+- On the other hand, **over-correcting** by heavily capping or transforming the data could flatten important differences between customer types, leading to **artificial or overlapping clusters**.
+
+To tackle this, I tried multiple approaches to treat outliers responsibly:
+- **IQR-based capping** to trim extreme values without completely discarding data
+- **Logarithmic transformations** to reduce skewness while preserving order
+- **Feature-specific thresholds**, defined after visualizing distributions and consulting with mentors
+
+Each method was followed by statistical checks and plots to verify that the treatment still preserved the natural structure of the data.
+
+Another substantial challenge was **data integration** from heterogeneous sources:
+- Merging transaction logs, account-level metrics, and customer master files introduced **feature redundancy**, with multiple columns reflecting similar concepts but at different granularities.
+- **Null values were inconsistently populated** across datasets, requiring careful alignment to avoid injecting bias.
+- **Collinearity** between features—especially in transaction-related variables—had to be identified and addressed to improve clustering performance and avoid confusion in interpretation.
+
+Solving these problems required a careful mix of domain understanding, experimentation, and iterative validation. Overall, this phase tested not only my technical skills but also my patience, adaptability, and attention to detail—helping me grow as a data science practitioner.
 
 
 
 
+Future Enhancements
+
+While the current modeling approach has laid a solid foundation for behavioral segmentation, there are several opportunities to improve the model’s performance, business relevance, and long-term utility. The following enhancements are recommended for future iterations of this project:
+
+1. Advanced Feature Engineering on Flag Variables
+
+The dataset contains a large number of binary or flag-type features, which, in their raw form, offer limited variability and contribute disproportionately to sparsity. Many of these flags are interrelated or derived from similar behaviors.
+In future modeling cycles, consolidating and transforming these flag features—for example, by combining related indicators or deriving usage scores—will help reduce noise, enhance interpretability, and improve clustering quality.
+
+2. Sub-Clustering Within High-Level Segments
+
+While K-Means clustering helped identify broad customer segments, early exploratory analysis suggests that heterogeneity still exists within some clusters—especially in large or high-value customer groups.
+A future direction would be to apply hierarchical or density-based clustering algorithms (e.g., DBSCAN) within existing clusters to uncover "clusters within clusters". This layered segmentation approach could help identify niche customer personas or uncover latent patterns missed by the first-level segmentation.
+
+3. Refinement of the “High-Value Customer” Definition
+
+One of the key challenges in unsupervised learning is the absence of labeled ground truth. While transactional volume and frequency were used as proxies for customer value, the definition of a "high-value customer" remains qualitative and somewhat ambiguous.
+Future efforts should aim to establish a more precise and business-aligned definition of high-value customers, possibly incorporating:
+
+Lifetime value estimates
+
+Product profitability
+
+Cross-channel engagement
+
+Credit history or risk scores
+This would allow the clusters to be benchmarked and validated more effectively, and could also support semi-supervised approaches or targeted marketing strategies.
 
 
+4. Enhanced Feature Selection Using Mutual Information and Correlation
 
+Further refinement of the input space using mutual information scores and correlation analysis can help eliminate redundant features and strengthen the overall structure of the model. This would lead to clearer separation between clusters and improved alignment with actual customer behavior.
 
+5. Model Scalability and Recalibration
 
+To maintain relevance in a dynamic financial ecosystem, the segmentation model should be retrained and recalibrated on a semi-annual or quarterly basis, incorporating new customer behaviors, product launches, and economic shifts.
+Automating this update cycle would help keep the model fresh, reliable, and aligned with real-time business needs.
 
-Problem Statement
+6. Expansion of Dataset Scope and Duration
 
-The main goal of this project was to build a solid, data-driven approach to segment and pinpoint high-value customers from a huge customer base at SBI, using unsupervised machine learning. With more than 2.3 million customers in the full dataset, the segmentation process relied on a detailed study of behavioral trends pulled from transactional, account, and customer data. By discovering groups of customers who share similar characteristics, the project helps SBI personalize outreach, boost cross-selling, and improve retention efforts.
+Using a longer observation window (e.g., 12 months) and including additional behavioral touchpoints such as digital engagement, complaint logs, and campaign responses can make the model more robust. A richer dataset will allow the model to uncover long-term behavioral trends rather than short-term fluctuations.
 
-Key Objectives:
+### Future Enhancements
 
-Identify clusters containing high-value customers, enabling more targeted and relevant marketing.
+While the current behavioral segmentation model offers a strong starting point, there is significant scope to make it more accurate, business-focused, and adaptable to real-world needs. Based on this learning experience and early findings from the model, here are some key improvement ideas for the next phases of the project:
 
-Reveal the behavioral traits that drive customer value in different segments.
+**1. Better Feature Engineering for Flag Variables**
 
-Support better strategic decisions by supplying actionable insights from customer segmentation.
+The dataset includes many binary “flag” features (like product enrollment or channel usage flags), which in their raw form don’t add much complexity to the model and can add unwanted sparsity.
+- In future iterations, I recommend **grouping related flags** (e.g., product usage flags) and converting them into **usage scores or counts**.
+- For example, instead of keeping 8 separate product flags, we could create one variable that represents “number of products used” or usage diversity.
+- This will help reduce noise, improve clustering clarity, and boost interpretability.
 
-Tools and Techniques Used
-Programming & Analysis Environment:
+**2. Sub-Clustering Within Broader Segments**
 
-Jupyter Notebook was used for all phases—from exploring the data and building models, to presenting the final results.
+Although K-Means helped segment customers into broader groups, initial visualizations suggested there was still variety within some segments—especially large or high-value ones.
+- A possible enhancement is to apply a **second-level clustering** technique like **DBSCAN** or **hierarchical clustering** within each major cluster.
+- This approach (often called **nested clustering**) can help uncover more specific personas and edge cases that first-level clustering can’t detect.
+  
+---
 
-Languages & Libraries:
+**3. Clearer Definition of “High-Value Customer”**
 
-Python: The main language for all data handling and analysis.
+Since this was an unsupervised project, we relied on proxies like transaction volume and frequency to estimate customer value. However, this doesn’t fully capture a customer’s actual or long-term worth to the bank.
+- Future work should focus on building a more **business-aligned definition of customer value**, possibly incorporating:
+  - **Customer Lifetime Value (CLV)**
+  - **Profitability of products held**
+  - **Cross-product usage and digital engagement**
+  - **Risk scores or repayment behavior (for credit customers)**
+- A stronger value definition can help benchmark clusters more effectively, support **semi-supervised learning**, and enable **value-based targeting**.
 
-NumPy & Pandas: For number crunching and easy manipulation of structured data.
+**4. Smarter Feature Selection Using Mutual Information & Correlation**
 
-Scikit-learn: Used for machine learning, especially clustering and dimensionality reduction techniques.
+Although the model currently includes many engineered variables, further refinement using **mutual information scores**, **pairwise correlation**, and **feature importance testing** can improve performance.
+- This would remove redundant variables that don’t add much difference across clusters and sharpen the model’s ability to group behaviorally distinct customers.
 
-Seaborn & Matplotlib: Essential for creating clear, insightful visualizations during the analysis.
+**5. Scalable and Automated Model Updates**
 
-Data Processing & Modeling Techniques:
+Customer behavior, product offerings, and market conditions change over time. To keep the segmentation relevant:
+- The model should ideally be **retrained regularly**—every 3 to 6 months—with new data.
+- If possible, portions of the pipeline should be **automated** (e.g., using scheduled notebook runs or data pipelines) for faster recalibration with fresh customer behavior.
+- This will make the model more responsive to business trends and help in long-term deployment.
 
-SQL: To extract relevant data efficiently from SBI’s relational databases.
+**6. Wider Data Scope and Longer History**
 
-Feature Engineering: Transformed raw banking data into meaningful features that reflect customer behavior.
+The current analysis used 6 months of behavior, but a longer **observation window (e.g., 12 months)** would capture more stable customer patterns.
+- Expanding the dataset to include:
+  - **Digital interaction logs**
+  - **Customer complaints or feedback**
+  - **Campaign response data**
+- can allow exploration of customer sentiment and engagement beyond transactions, leading to deeper and multidimensional segmentation.
 
-Weighted Scoring: Prioritized the importance of different features for modeling.
-
-Dimensionality Reduction: Employed techniques like t-SNE and Kernel PCA for visualizing patterns and clusters in high-dimensional data.
-
-Clustering Algorithms: Mainly K-Means, to group customers into naturally similar segments.
-
-Architectural Overview
-Dataset & Features
-Sample Size: 500,000 customers (representing over 20% of the total base of 2.3 million customers)
-
-Feature Breakdown:
-
-91 behavioral and account-based features (for example, types of products held, account usage activity)
-
-26 transaction-focused features (such as frequency, transaction amounts, and preferred banking channels)
-
-5 demographic/personal features (including age and the length of time the customer has been with the bank)
-
-Integration: Pulled and merged data across multiple sources using customer and account IDs to create a unified view for each customer.
-
-Workflow Overview
-Data Extraction & Integration:
-Pulled data from several sources—recent transaction logs (last 3 months), account statements, and the master list of customers.
-
-Data Cleaning & Quality Assurance:
-Tackled missing data with imputation and robust weighting. Ensured features were reliable and consistent for modeling.
-
-Multi-Level Aggregation:
-Combined transaction- and account-level data to form a master record at the customer level.
-
-Feature Engineering:
-Developed and normalized new metrics (like spending scores and activity indexes), and removed feature overlaps to make the clusters meaningful.
-
-Dimensionality Reduction:
-Applied t-SNE and Kernel PCA. This helped shrink down the hundreds of features into manageable dimensions for both visualization and better clustering results.
-
-Customer Segmentation:
-Used K-Means clustering to sort customers into behavioral groups, especially focusing on isolating segments with high-value behaviors.
-
-This project not only highlighted how advanced analytics can deliver business impact in banking, but also allowed me, as a BTech intern, to practically apply and learn from real data scenarios—combining technical skills in Python and machine learning with business insight and customer understanding.
-
+These future enhancements aim to make the model not only more accurate but also more practical and business-ready—supporting better targeting, personalization, and long-term strategic decisions at SBI.
 
 
 
