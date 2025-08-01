@@ -1,21 +1,53 @@
-import pandas as pd
-import plotly.express as px
+Slide 1: Introduction
+•	Objective: Segment high value customers by analyzing behavior patterns
+•	Data: 500,000 sample from 2.3 million customers (over 20% coverage)
+•	Rich feature set: 91 behavioral/account, 26 transaction, 5 personal info features
+•	Approach: Applied advanced unsupervised learning methods
+•	Goal: Identify and separate high value customers for targeted strategies
+Slide 2: Feature Scoring & Weighting Framework
+•	Developed scoring formula to quantify customer engagement and product usage
+•	Example:
+o	Overall mean usage rate (e.g., 40% use UPI → score = 0.6)
+o	Conditional mean rate (e.g., 40% of Platinum use YONO → score = 0.4)
+•	Feature weights reflect relevance to high value customer behaviors
+•	Digital engagement weights: INB: 5, YONO: 4, MBS: 3, UPI: 2, ATM: 1
+•	Product weights: Home Loan: 4, Personal Loan: 3, FD: 2, RD: 1
+•	Ensures fairness: Mitigates overemphasis on particular products/channels
+•	Reduces bias, aligns with behavioral expectations for each segment
+Slide 3: Data Aggregation & Feature Engineering
+•	Integrated multiple datasets: customer details + 3 months of transactions
+•	Stepwise aggregation: transactions → accounts → customer level
+•	Engineered features ensure balanced correlation and variance
+•	Addressed missing values using weighted scoring and pipeline techniques
+•	Result: Comprehensive, high-quality feature matrix per customer
+Slide 4: Aggregation Pipeline
+•	Transaction features engineered at account level
+•	Merged transaction data with account and customer master tables
+•	Aggregated multiple accounts to unique customer IDs
+•	Performed data quality checks after each aggregation step
+•	Established single, enriched customer profile for modeling
+Slide 5: Feature Selection & Reduction
+•	Removed features with high correlation or low variance to improve learning
+•	Dropped features already used to compute composite variables
+•	Iterative review to eliminate redundant and excessive features
+•	Prepared optimal set for dimensionality reduction
+Slide 6: Dimensionality Reduction Techniques
+•	Reduced high-dimensional data for effective clustering
+•	Used t-SNE for nonlinear dimensionality reduction and visualization
+•	Considered Kernel PCA, but computational constraints (O(n²) memory)
+•	Achieved two-dimensional representation preserving behavioral structure
+Slide 7: Clustering with K-Means
+•	Applied K-Means to reduced data for behavior segmentation
+•	Formed clear clusters (tested with k=3 and k=6)
+•	Silhouette scores: 3 clusters = 3.67; 6 clusters = 3.56
+•	Selected 6 clusters for detailed analysis and identification of high value customers
+Slide 8: Identifying High Value Segments
+•	Calculated Customer_Score using feature weights and groupings
+•	Customer_Score = proxy for likelihood of high value behavior (scale: 0-100)
+•	Cluster 4 contains majority of top-scoring (potential high value) customers
+•	Current methodology acts as brute force; further refinement possible with business input
+•	Next steps: Validate clusters, refine feature definitions, support targeted actions
 
-# Assume df is your DataFrame
 
-# Take a 0.1% sample (minute sample)
-sample_df = df.sample(frac=0.001, random_state=42)
 
-# Select 10 representative numeric columns
-cols = [
-    'END_OF_DAY_BAL', 'INT_AVLABL', 'AVG_BAL_MTD', 'AVG_BAL_QTD', 'AVG_BAL_YTD',
-    'DR_AMT', 'CR_AMT', 'SAVINGS_BANK', 'FD', 'CA'
-]
-
-# Melt for boxplot
-melt_df = sample_df[cols].melt(var_name='Variable', value_name='Value')
-
-# Plotly boxplot
-fig = px.box(melt_df, x="Variable", y="Value", points="outliers")
-fig.show()
 
